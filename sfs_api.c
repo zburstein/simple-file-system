@@ -31,12 +31,10 @@ int availableInode; //will represent the lowest value inode space available
 int availableDirectory; //should i use this
 int availableFd;
 
-//why no malloc for sb anad inodes 
 //rot directory inode: mode? size? ptrs?
 //does root directory have an entry for itself within itself?
 //instead of using current block should i just use the freeblocks array? 
 //what if we run out of inode or directory sapce in block?
-//are the things above declared goballyy?
 //in conjunction with previous question what if we alot and then it happens to be bigger than that
 //are those that i declare to keep track of entries in fd table bad practice? 
 //what should we set the pointer for data blocks to when we are not allocating it any space
@@ -51,6 +49,12 @@ int availableFd;
 //everythign i have is set up for each file only having a single block. ill have to make changes once i figure out what is going on with that. Especially with write. alot going on there. Will ahve to do a bunch of checks probably 
 //are we seting an upper limit on our file size. if not then how to properly deal with the data ptrs.
 //how many blocks is the directory
+//what am i returning for seek
+//what if try and remove a file that is open. how to get fdtable entry
+//do we need to write 0s into the data blocks?
+//do i want currentBlock
+
+//remove, write, and read are all set up for single blocks. will need to change these once I understand the pointers
 
 void mksfs(int fresh) {
 	//Implement mksfs here	
@@ -281,15 +285,69 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 }
 
 int sfs_fseek(int fileID, int loc){
-
 	//Implement sfs_fseek here	
+	int inodeNumber;
+
+	inodeNumber = fd_table[fileID].inode_number; //get inode number 
+
+	//if provided locaiton to large
+	if(loc > inode_table[inodeNumber].size){
+		fd_table[fileID].rw_pointer = inode_table[inodeNumber].size;
+	}
+	//if too small
+	else if(loc < 0){
+		fd_table[fileID].rw_pointer = 0;
+	}
+	else{
+		fd_table[fileID].rw_pointer = loc;
+	}
+
 	return 0;
 }
 
 int sfs_remove(char *file) {
-
 	//Implement sfs_remove here	
-	//when remove it all make sure to properly set available dir and inode
+	int dirIndex, inodeNumber;
+
+	//find the file in directory
+	dirIndex = findInDir();
+	if(dirIndex == -1){
+		printf("File does not exist\n");
+		return EXIT_FAILURE;
+	}
+
+	inodeNumber = root_dir[dirIndex].inode;//get inode number
+
+	//remove the data blocks
+	free_blocks[inode_table[inodeNumber].data_ptrs[0]] = 0;
+	
+	//reset current block if it is not the earliest available
+	if(currentBlock > inode_table[inodeNumber].data_ptrs[0]){
+		currentBlock = inode_table[inodeNumber].data_ptrs[0];
+	}
+
+	//remove the inode 
+	inode_table[inodeNumber].mode = 0;
+	inode_table[inodeNumber].link_cnt = 0;
+	inode_table[inodeNumber].uid = 0;
+	inode_table[inodeNumber].gid = 0;
+	inode_table[inodeNumber].size = 0;
+	inode_table[inodeNumber].data_ptrs[0] = 0;
+
+	//reset availableInode
+	if(availableInode > inodeNumber){
+		availableInode = inodeNumber;
+	}
+
+	//remove the directory entry
+	root_dir[dirIndex].file_name = 0;
+	root_dir[dirIndex].inode = 0;
+
+	//reset direntry if needed
+	if(availableDirectory > dirIndex){
+		availableDirectory = dirIndex;
+	}
+	
 	return 0;
 }
 
