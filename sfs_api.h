@@ -25,7 +25,8 @@ typedef struct inode{
 	unsigned int uid; //user id
 	unsigned int gid; //group id
 	unsigned int size; //size fo the file
-	unsigned int data_ptrs[10]; //pointers to the disk blocks that store the files contents
+	unsigned int data_ptrs[12]; //pointers to the disk blocks that store the files contents
+	unsigned int indirect_pointer;
 } inode_t;
 
 typedef struct dir_entry{

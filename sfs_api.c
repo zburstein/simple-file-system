@@ -37,13 +37,11 @@ int availableFd;
 //what if we run out of inode or directory sapce in block?
 //in conjunction with previous question what if we alot and then it happens to be bigger than that
 //are those that i declare to keep track of entries in fd table bad practice? 
-//what should we set the pointer for data blocks to when we are not allocating it any space
 //he created close as having int return but not that in the assignment. So which is it? What should failure and success codes be
 //do we have to malloc a space for the buffer. I dont understand when we are supposed to be doing this
 //also whats the deal with caching
 //need to figure out data ptrs and what to do when there is more tan one block of memory being used. might just be aloop. but dont really know how data ptrs work so cant implement it
 //Check the usages of the available stuff to ensure that I have the properc checks before using them
-//where should write and read pointers start? 
 //What does he mean flush it to disk when writing
 //do we ahve to assign EOF
 //everythign i have is set up for each file only having a single block. ill have to make changes once i figure out what is going on with that. Especially with write. alot going on there. Will ahve to do a bunch of checks probably 
@@ -55,6 +53,9 @@ int availableFd;
 //do i want currentBlock
 
 //remove, write, and read are all set up for single blocks. will need to change these once I understand the pointers
+//also what about the false flag
+//a little confused about get next file name too. 
+//what to return for a failed open
 
 void mksfs(int fresh) {
 	//Implement mksfs here	
@@ -117,8 +118,9 @@ int sfs_getfilesize(const char* path) {
 	}*/
 	
 	int index = findInDir(path);
+	int inodeNumber = root_dir[index].inode;
 	if(index >= 0)
-		return root_dir[i].inode.size; //this might not work becaseu size might not be a pointer but rather index in inode table/inode_table[root_dir[i].inode].size
+		return inode_table[inodeNumber].size;
 	else{
 		printf("File not found\n");
 		return -1;
@@ -150,7 +152,7 @@ int sfs_fopen(char *name) {
 		*/
 		
 		//first check if space in inode table
-		if(availableInode == MAX_INODES || currentBlock == MAX_BLOCKS || availableDir == MAX_INODES){
+		if(availableInode >= MAX_INODES || currentBlock >= MAX_BLOCKS || availableDir >= MAX_INODES){
 			printf("There is no space available for another file\n");
 			return -1;
 		}
@@ -161,20 +163,15 @@ int sfs_fopen(char *name) {
 		inode_table[availableInode].uid = 0;
 		inode_table[availableInode].gid = 0;
 		inode_table[availableInode].size = 0;
-		inode_table[availableInode].data_ptrs[0] = -1; //currentBlock; //place in newest available block
-
-		//and do the free_blocks
-		//free_blocks[currentBlock]  = 1;
-		//currentBlock++; //increment
+		inode_table[availableInode].data_ptrs[0] = 0; //do not allot a spot yet
 
 		//create new directory entry
-		//???? check fo valid 
-		if(strlen(path) > 20){ //|| check also for proper extension length
+		if(strlen(path) > 20 || strlen(strchr(name, '.')) > 4){ 
 			printf("File name is invalid. Must not be longer than 20 char total and extension cannot be longer than 3 char\n");
 			return -1;
 		}
 		strcpy(root_dir[availableDir].file_name, path); //copy the file name
-		root_dir[availableDir].inode = availableInode;	//need to be pointer or index?
+		root_dir[availableDir].inode = availableInode;	//and the inodeNumber
 		
 		//change the values of availableInode and availableDIr accordingly for next entry
 		findOpenInode(availableInode);
@@ -183,12 +180,17 @@ int sfs_fopen(char *name) {
 
 	//file already exists or has been created at this point
 	//need to give file an entry in the file descriptor table
-	//search directory
+	//if no space in fd table
+	if(availableFd >= MAX_FILES){
+		printf("No more space available\n");
+		return -1;
+	}
+	//else search directory
 	for(i = 0; i < MAX_INODES; i++){
 		//when find it set all the properties in fdtable accordingly
 		if(strcmp(root_dir[i].file_name, path) == 0){
 			fd_table[availableFd].inode_number = root_dir[i].inode; //in fd table set the inode number
-			fd_table[availableFd].rw_pointer= inode_table[root_dir[i].inode].size; //set read write pointer to end of file
+			fd_table[availableFd].rw_pointer = inode_table[root_dir[i].inode].size; //set read write pointer to end of file
 		}
 	}
 
@@ -271,10 +273,17 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 	//if will fit in the block. THIS IS FOR IF ONLY ONE BLOCK
 	if((inode_table[inodeNumber].size + length) / BLOCK_SIZE <= 1){
 		read_blocks(inode_table[inodeNumber].data_ptrs[0], 1, &blockContent[0]); //read the block
-		memcpy(&blockContent[fd_table[fileID].rw_pointer], buf, length); //copy into blcok content at write pointer hte contents of buf
+		memcpy(&blockContent[fd_table[fileID].rw_pointer], buf, length); //copy into blcok content at write pointer the contents of buf
 		write_blocks(inode_table[inodeNumber].data_ptrs[0], 1, &blockContent[0]);//write into the block
-		inode_table[inodeNumber].size += length; //update the size
-		fd_table[fileID].rw_pointer += length; //update the r/w pointer
+
+		//update the size of file. if appended or written in weay that makes file larger
+		if(inode_table[inodeNumber].size == fd_table[fileID].rw_pointer || fd_table[fileID].rw_pointer + length > inode_table[inodeNumber].size){
+			inode_table[inodeNumber].size += length; 
+		}
+		//else the size is not changing
+		//then update the r/w pointer
+		fd_table[fileID].rw_pointer += length; 
+
 	}
 
 	//need to know how the data ptrs work to do the rest   
