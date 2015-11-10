@@ -30,7 +30,7 @@ typedef struct inode{
 } inode_t;
 
 typedef struct dir_entry{
-	const char file_name[20]; //the name
+	char file_name[20]; //the name
 	unsigned int inode; //the pointer to location in inode table
 } dir_entry_t;
 

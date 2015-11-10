@@ -2,22 +2,23 @@
 #include "disk_emu.h"
 #include <stdlib.h>
 #include <stdio.h>
-#include <strings.h>
+#include <string.h>
 
 #define BLOCK_SIZE 512
-#define MAX_BLOCKS 100
+#define MAX_BLOCKS 500
 
 #define DISK_FILE "sfs_disk.disk"
-#define MAX_INODES 10 //not sure what this should be
-#define MAX_FILES 10 //not sure wha thtis should be
+#define MAX_INODES 50 //not sure what this should be
+#define MAX_FILES 50 //not sure wha thtis should be
 
 void zeroDisk();
 void init_sb();
 void add_root_dir_inode();
 void init_free_blocks();
 int findInDir(const char *path);
+int findInFd (unsigned int inodeNumber);
 void findOpenInode(int number);
-void findOenDir(int number);
+void findOpenDir(int number);
 void findOpenFd(int number);
 void findCurrentBlock(int number);
 
@@ -29,7 +30,8 @@ unsigned short free_blocks[MAX_BLOCKS]; //free blocks jsut an int array with eac
 int currentBlock; //to know what block to write the data to
 int availableInode; //will represent the lowest value inode space available
 int availableDirectory; //should i use this
-int availableFd;
+int availableFd = 0;
+int getNextFileLocation = 0;
 
 //rot directory inode: mode? size? ptrs?
 //does root directory have an entry for itself within itself?
@@ -56,15 +58,19 @@ int availableFd;
 //also what about the false flag
 //a little confused about get next file name too. 
 //what to return for a failed open
+//do i have to malloc block content array for
+//if write too big shoudl we write to certain point that there is no logner any space or check first and not allow any write
 
 void mksfs(int fresh) {
 	//Implement mksfs here	
+
 	if(fresh == 1){
 		init_fresh_disk(DISK_FILE, BLOCK_SIZE, MAX_BLOCKS);//initializes the disk of given name and of the size
-		zeroDisk(); //zero all contents 
-		
+		//zeroDisk(); //zero all contents 
+
+		//allot space to dir and inode based upon how mnay coulf theoretically end up fitting. so will have to do sizeof / BLOCKSIZE
 		//create superblock and write it to disk
-		init_sd(); //initialize the super block
+		init_sb(); //initialize the super block
 		write_blocks(0, 1, &sb); //write to block 0 the contents of sb		
 
 		//initialize inode table
@@ -74,15 +80,17 @@ void mksfs(int fresh) {
 
 		//create and write root dir
 		write_blocks(2, 1, &root_dir);
-		availableDir = 0; //||1 depends on if it has its own entry
+		availableDirectory = 0; //||1 depends on if it has its own entry
 
 		//init the free blocks array and write it
 		init_free_blocks();
-		write_blcoks(MAX_BLOCKS - 1, 1, &free_blocks);//now write it to
+		write_blocks(MAX_BLOCKS - 1, 1, &free_blocks);//now write it to
 		currentBlock = 3;
 	}
 	else {
 		////?????
+		//read the root directory, superblock, and inode table into memory(the global variables)
+		//read_blocks(1, )
 	}
 	return;
 }
@@ -97,26 +105,6 @@ int sfs_getnextfilename(char *fname) {
 int sfs_getfilesize(const char* path) {
 	//Implement sfs_getfilesize here	
 	
-/*
-	int i, isPresent = 0;	
-	//loop through until find it
-	for(i = 0; i < MAX_INODES; i++){
-		if(strcmp(root_dir[i].file_name, path) == 0){
-			isPresent = 1;
-			break;
-		}
-		else if(root_dir == NULL){
-			break;
-		}
-	}
-
-	if(isPresent)
-		return root_dir[i].inode.size;
-	else{
-		printf("File does not exist\n");
-		return -1;
-	}*/
-	
 	int index = findInDir(path);
 	int inodeNumber = root_dir[index].inode;
 	if(index >= 0)
@@ -130,29 +118,18 @@ int sfs_getfilesize(const char* path) {
 
 int sfs_fopen(char *name) {
 	//Implement sfs_fopen here	
-	int inodeIndex, i, fd;
+	int fd, index;
 	
-	int index = findInDir(name);
+	//find its index in the directory
+	index = findInDir(name);
+
 	//if it does not exist then we need to create it by creating an inode and placig it in hte inode table as well as placing it in the directory
 	if(index == -1){ //does not exist so need to create the file
-		/*
-		//find first null inode value
-		for(inodeIndex = 0; inodeIndex < MAX_NODES; inodeIndex++){
-			if(inode_table[inodeIndex] == NULL){
-				//place new inode
-				inode_table[inodeIndex].mode = 0x755;///
-				inode_table[inodeIndex].link_cnt = 1;
-				inode_table[inodeIndex].uid = 0;
-				inode_table[inodeIndex].gid = 0;
-				inode_table[inodeIndex].size = 0;
-				inode_table[inodeIndex].data_ptrs[0] = currentBlock;
-				currentBlock++;
-			}
-		}
-		*/
-		
+
+		printf("inode: %d     block:%d    dir:%d      fd: %d\n", availableInode, currentBlock, availableDirectory, availableFd);
+	
 		//first check if space in inode table
-		if(availableInode >= MAX_INODES || currentBlock >= MAX_BLOCKS || availableDir >= MAX_INODES){
+		if(availableInode >= MAX_INODES || currentBlock >= MAX_BLOCKS || availableDirectory >= MAX_INODES || availableFd >= MAX_FILES){
 			printf("There is no space available for another file\n");
 			return -1;
 		}
@@ -166,57 +143,77 @@ int sfs_fopen(char *name) {
 		inode_table[availableInode].data_ptrs[0] = 0; //do not allot a spot yet
 
 		//create new directory entry
-		if(strlen(path) > 20 || strlen(strchr(name, '.')) > 4){ 
+		if(strlen(name) > 20 || strlen(strchr(name, '.')) > 4){ 
 			printf("File name is invalid. Must not be longer than 20 char total and extension cannot be longer than 3 char\n");
 			return -1;
 		}
-		strcpy(root_dir[availableDir].file_name, path); //copy the file name
-		root_dir[availableDir].inode = availableInode;	//and the inodeNumber
+		strcpy(root_dir[availableDirectory].file_name, name); //copy the file name
+		root_dir[availableDirectory].inode = availableInode;	//and the inodeNumber
+		index = availableDirectory; //set the index in directory
 		
 		//change the values of availableInode and availableDIr accordingly for next entry
 		findOpenInode(availableInode);
-		findOpenDir(availableDir); 
+		findOpenDir(availableDirectory); 
 	}	
 
 	//file already exists or has been created at this point
+
+	//if already open
+	if(findInFd(root_dir[index].inode) != -1){
+		printf("File already open\n");
+		return -1;
+	}
+
+
+
 	//need to give file an entry in the file descriptor table
 	//if no space in fd table
 	if(availableFd >= MAX_FILES){
 		printf("No more space available\n");
 		return -1;
 	}
-	//else search directory
-	for(i = 0; i < MAX_INODES; i++){
-		//when find it set all the properties in fdtable accordingly
-		if(strcmp(root_dir[i].file_name, path) == 0){
-			fd_table[availableFd].inode_number = root_dir[i].inode; //in fd table set the inode number
-			fd_table[availableFd].rw_pointer = inode_table[root_dir[i].inode].size; //set read write pointer to end of file
-		}
-	}
+	
+
+	//wset all the properties in fdtable accordingly
+	fd_table[availableFd].inode_number = root_dir[index].inode; //in fd table set the inode number
+	fd_table[availableFd].rw_pointer = inode_table[root_dir[index].inode].size; //set read write pointer to end of file
+	
 
 	fd = availableFd; //set the file descriptor index
 	findOpenFd(availableFd);//update availe fd index
+
 	return fd;//return file descriptor for the file opened
 }
 
-int sfs_fclose(int fileID){
-	//Implement sfs_fclose here	
-	//remove the file from the fd table
+int sfs_fclose(int fileID){	
+	
+	//first check if present in table
+	if(fd_table[fileID].inode_number == 0){
+		printf("There is no file with give handle\n");
+		return 0;
+	}
+
+	//else remove the file from the fd table
 	fd_table[fileID].inode_number = 0;
+	printf("its been closed and the inode number at %d  is now %d ", fileID, fd_table[fileID].inode_number);
 	fd_table[fileID].rw_pointer = 0;
 
 	//if the file descriptor being moved is the lowest value now open in fd_table
 	if(fileID < availableFd)
 		availableFd = fileID;
 
-	return 0;
+	return 1;
 }
+
+
+/*
+
 
 int sfs_fread(int fileID, char *buf, int length){
 	//find reference within the file descriptor table and get the inode
-	int inodeNumber, block_number;
+	int inodeNumber, block_number, loc_in_block, bytesRead = 0;
 	char blockContent[BLOCK_SIZE];
-	inodeNumber = fd_table[fileId].inode_number;	
+	inodeNumber = fd_table[fileID].inode_number;	
 	
 	//if bad handle
 	if(inodeNumber == 0){
@@ -231,25 +228,54 @@ int sfs_fread(int fileID, char *buf, int length){
 	}
 
 	//if too long just cut it down to proper size
-	if(fd_table[fileID].rw_pointer + length > inode_table[inodeNUmber].size)
+	if(fd_table[fileID].rw_pointer + length > inode_table[inodeNumber].size)
 		length = inode_table[inodeNumber].size - fd_table[fileID].rw_pointer;
-	
-	//read the block into a buffer to later copy specific contents		
-	read_blocks(inode_table[inodeNumber].data_ptrs[0], 1, &blockContent[0]);
-	
-	//then copy the desired amount into buf starting from the read pointer
-	memcpy(buf, &blockContent[fd_table[fileID].rw_pointer], length); 
-	fd_table[fileID].rw_pointer += length; //update the read pointer
 
-	return length; //return the number of characters copied
+	//read the data. need loop in the event taht read spans multiple blocks
+	while(bytesRead < length){
+		//get the block that the r/w pointer is on and where within the block it is
+		block_number = inode_table[inodeNumber].rw_pointer / BLOCK_SIZE; 
+		loc_in_block = inode_table[inodeNumber].rw_pointer % BLOCK_SIZE;
+
+		//if need to use indirect pointer
+		if(block_number > 11){
+			//do some thing
+		}
+		//if using a direct pointer
+		else{
+			//read the block into a buffer
+			read_blocks(inode_table[inodeNumber].data_ptrs[block_number], 1, &blockContent[0]);
+			
+			//copy into provided buffer. Need to determine though the length to be copied
+			//if rest of read will be contained within current block
+			if(length + loc_in_block < BLOCK_SIZE){
+				memcpy(&buf[bytesRead], &blockContent[loc_in_block], length); //will not go outside of the boundary of blockContent
+				bytesRead += length; //update the number of bytes read
+				length -= length; //update remaining length
+				fd_table[inodeNumber].rw_pointer += length; //update pointer
+			}
+			//if read will have to span to next block
+			else{
+				memcpy(&buf[bytesRead], &blockContent[loc_in_block], BLOCK_SIZE - loc_in_block);//copy until the end of the block
+				bytesRead += BLOCK_SIZE - loc_in_block; //update number of bytes read
+				length -= BLOCK_SIZE - loc_in_block; //update the remaining length
+				fd_table[inodeNumber].rw_pointer += BLOCK_SIZE -loc_in_block; //update teh read write pointer
+			}
+		}
+
+	}
+
+	return bytesRead; //return the number of characters copied
 }
 
 int sfs_fwrite(int fileID, const char *buf, int length){
 	//Implement sfs_fwrite here	
-	int inodeNumber;
+	int inodeNumber, block_number, loc_in_block, bytesWritten = 0;
 	char blockContent[BLOCK_SIZE];	
 
+	//get inode number
 	inodeNumber = fd_table[fileID].inode_number;
+
 	//if bad handle
 	if(inodeNumber == 0){
 		printf("File descriptor does not exist\n");
@@ -258,7 +284,7 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 
 	//if the file is empty, need to allot it a block
 	if(inode_table[inodeNumber].size == 0){
-		//if full
+		//if not enough space for file
 		if(currentBlocks >= MAX_BLOCKS){
 			printf("No space available\n");
 			return 0;
@@ -270,34 +296,71 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 		findCurrentBlock(currentBlock);
 	}
 
-	//if will fit in the block. THIS IS FOR IF ONLY ONE BLOCK
-	if((inode_table[inodeNumber].size + length) / BLOCK_SIZE <= 1){
-		read_blocks(inode_table[inodeNumber].data_ptrs[0], 1, &blockContent[0]); //read the block
-		memcpy(&blockContent[fd_table[fileID].rw_pointer], buf, length); //copy into blcok content at write pointer the contents of buf
-		write_blocks(inode_table[inodeNumber].data_ptrs[0], 1, &blockContent[0]);//write into the block
+	while(bytesWritten < length){
+		//get the block that the r/w pointer is on and where within the block it is
+		block_number = inode_table[inodeNumber].rw_pointer / BLOCK_SIZE; 
+		loc_in_block = inode_table[inodeNumber].rw_pointer % BLOCK_SIZE;
 
-		//update the size of file. if appended or written in weay that makes file larger
-		if(inode_table[inodeNumber].size == fd_table[fileID].rw_pointer || fd_table[fileID].rw_pointer + length > inode_table[inodeNumber].size){
-			inode_table[inodeNumber].size += length; 
+		//if need a new block
+		if(block_number < 11 && inode_table[inodeNumber].data_ptrs[block_number] == 0){
+			//if no space
+			if(currentBlock >= MAX_BLOCKS){
+				printf("No more space available to complete write of file\n");
+				return bytesWritten;
+			}
+			else{
+				inode_table[inodeNumber].data_ptrs[block_number] = currentBlock; //assign it block
+				free_blocks[currentBlock] = 1; //update free blocks bit map
+				findCurrentBlock(currentBlock); //get new current block
+			}
 		}
-		//else the size is not changing
-		//then update the r/w pointer
-		fd_table[fileID].rw_pointer += length; 
 
+		//then begin write
+		//if on indirect pointer
+		if(block_number > 11){
+
+		}
+
+		//if direct pointer
+		else{
+			//read the block into buffer
+			read_blocks(inode_table[inodeNumber].data_ptrs[block_number], 1, &blockContent[0]);
+
+			//if write will finish within this block
+			if(length + loc_in_block < BLOCK_SIZE){
+				memcpy(&blockContent[loc_in_block], &buf[bytesWritten], length);
+				write_blocks(inode_table[inodeNumber].data_ptrs[block_number], 1, &blockContent[0]); //write it
+				bytesWritten += length; //update number of byteswritten
+				length -= length; //update the length
+				fd_table[inodeNumber].rw_pointer += length;//update the pointer location
+			}
+
+			//will spand more than one block
+			else{
+				memcpy(&blockContent[loc_in_block], &buf[bytesWritten], BLOCK_SIZE - length);//copy until the end of the block
+				write_blocks(inode_table[inodeNumber].data_ptrs[block_number], 1, &blockContent[0]);//write the block
+				bytesWritten += BLOCK_SIZE - loc_in_block; //update bytes written
+				length -= BLOCK_SIZE -loc_in_block; //update length
+				fd_table[inodeNumber].rw_pointer += BLOCK_SIZE - loc_in_block; //update the rw pointer
+			}
+
+			//adjust size if needed
+			if(fd_table[inodeNumber].rw_pointer > fd_table[inodeNumber].size){
+				fd_table[inodeNumber].size = fd_table[inodeNumber].rw_pointer;
+			}
+
+			//and then loop back up again
+		}
 	}
-
-	//need to know how the data ptrs work to do the rest   
-	
-		
-
-	return 0;
+	return bytesWritten;
 }
 
 int sfs_fseek(int fileID, int loc){
 	//Implement sfs_fseek here	
 	int inodeNumber;
 
-	inodeNumber = fd_table[fileID].inode_number; //get inode number 
+	//get inode number
+	inodeNumber = fd_table[fileID].inode_number;  
 
 	//if provided locaiton to large
 	if(loc > inode_table[inodeNumber].size){
@@ -349,7 +412,7 @@ int sfs_remove(char *file) {
 	}
 
 	//remove the directory entry
-	root_dir[dirIndex].file_name = 0;
+	root_dir[dirIndex].file_name = "\0";
 	root_dir[dirIndex].inode = 0;
 
 	//reset direntry if needed
@@ -360,10 +423,12 @@ int sfs_remove(char *file) {
 	return 0;
 }
 
+*/
+
 void init_sb(){
 	sb.magic = 1234;
 	sb.block_size = BLOCK_SIZE;
-	sb.fs_size = MAX_BLOCKS * BLOCKS_SIZE;
+	sb.fs_size = MAX_BLOCKS * BLOCK_SIZE;
 	sb.inode_table_length = MAX_INODES;
 	sb.root_dir_inode = 0; //why is this 0
 }
@@ -374,7 +439,7 @@ void zeroDisk(){
 	bzero(&inode_table[0], sizeof(inode_t) * MAX_INODES); //inode table
 	bzero(&root_dir, sizeof(dir_entry_t)); //root directory
 	bzero(&free_blocks[0], sizeof(unsigned short) * MAX_BLOCKS); //free blocks array
-	bzero(&fd_table[0], sizeof(fd_entry_t) * MAX_BLOCKS); //fd table
+	bzero(&fd_table[0], sizeof(fd_table_entry_t) * MAX_BLOCKS); //fd table
 }
 
 void add_root_dir_inode(){
@@ -413,32 +478,49 @@ int findInDir(const char *path){
 	else
 		return -1;
 }
+
+
+int findInFd(unsigned int inodeNumber){
+	int i;
+
+	//search through fd table if find number
+	for(i = 0; i < MAX_FILES; i++){
+		if(fd_table[i].inode_number == inodeNumber){
+			return i;
+		}
+		else if(fd_table[i].inode_number == 0){
+			return -1;
+		}
+	}
+	return -1;
+}
+
 	
 void findOpenInode(int number){
 	int i = number;
 	for(i = number; i < MAX_INODES; i++){//can start at the current location
 		//if it is first nul then set accordingly and return
-		if(inode_table[inodeIndex].link_cnt == 0){ 
+		if(inode_table[i].link_cnt == 0){ 
 			availableInode = i; 
 			return;
 		}
 	}
 	
 	//at this point no null values available so it is full
-	availabInode = MAX_INODES; //have conditions taht will cehck this bfore use
+	availableInode = MAX_INODES; //have conditions taht will cehck this bfore use
 }
 
 void findOpenDir(int number){
 	int i = number;
 	for(i = number; i < MAX_INODES; i++){
-		if(root_dir[i].file_name == 0){
-			availableDir = i;
+		if(root_dir[i].file_name[0] == '\0'){
+			availableDirectory = i;
 			return;
 		}
 	}
 	
 	//out of space
-	availableDir = MAX_INODES; //have conditions that will check this	
+	availableDirectory = MAX_INODES; //have conditions that will check this	
 }
 
 void findOpenFd(int number){
@@ -451,7 +533,7 @@ void findOpenFd(int number){
 	}
 	
 	//out of space
-	availableDir = MAX_FILES; //have conditions that will check this
+	availableDirectory = MAX_FILES; //have conditions that will check this
 }	
 
 void findCurrentBlock(int number){
@@ -468,4 +550,5 @@ void findCurrentBlock(int number){
 	currentBlock = MAX_BLOCKS; //have conditions that will check this	
 
 			currentBlock = i;
+}
 		
