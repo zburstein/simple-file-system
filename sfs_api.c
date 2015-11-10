@@ -195,7 +195,6 @@ int sfs_fclose(int fileID){
 
 	//else remove the file from the fd table
 	fd_table[fileID].inode_number = 0;
-	printf("its been closed and the inode number at %d  is now %d ", fileID, fd_table[fileID].inode_number);
 	fd_table[fileID].rw_pointer = 0;
 
 	//if the file descriptor being moved is the lowest value now open in fd_table
@@ -482,7 +481,6 @@ int findInDir(const char *path){
 
 int findInFd(unsigned int inodeNumber){
 	int i;
-
 	//search through fd table if find number
 	for(i = 0; i < MAX_FILES; i++){
 		if(fd_table[i].inode_number == inodeNumber){
