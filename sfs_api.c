@@ -286,7 +286,7 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 	unsigned int *indirectBlock;
 
 	blockContent = (char*) malloc(BLOCK_SIZE); //make new buffer
-	indirectBlock = (unsigned int*) malloc(sizeof(unsigned int) / BLOCK_SIZE); /////////////////need to fix this
+	indirectBlock = (unsigned int*) malloc(BLOCK_SIZE / sizeof(unsigned int)); /////////////////need to fix this
 
 	//get inode number
 	inodeNumber = fd_table[fileID].inode_number;
@@ -300,7 +300,7 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 	//if the file is empty, need to allot it a block
 	if(inode_table[inodeNumber].size == 0){
 		//if not enough space for file
-		if(currentBlocks >= MAX_BLOCKS){
+		if(currentBlock >= MAX_BLOCKS){
 			printf("No space available\n");
 			return 0;
 		}
@@ -313,8 +313,8 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 
 	while(bytesWritten < length){
 		//get the block that the r/w pointer is on and where within the block it is
-		block_number = inode_table[inodeNumber].rw_pointer / BLOCK_SIZE; 
-		loc_in_block = inode_table[inodeNumber].rw_pointer % BLOCK_SIZE;
+		block_number = fd_table[fileID].rw_pointer / BLOCK_SIZE; 
+		loc_in_block = fd_table[fileID].rw_pointer % BLOCK_SIZE;
 
 		/////////////////////what if writing and arrive at indirect pointer. how to get this//////////////////////
 
@@ -346,40 +346,47 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 				findCurrentBlock(currentBlock); //find enxt available block
 				indirectBlock[0] = currentBlock; //then set it in array we will use to write to block
 				currentIndirectPointer = currentBlock; //also keep it in easier access fo use in write
-				write_blocks(inode_table[inodeNumber].direct_pointer, 1, &indirectBlock); //write into the indeirect pointer the new block
+				write_blocks(inode_table[inodeNumber].indirect_pointer, 1, &indirectBlock); //write into the indeirect pointer the new block
 				findCurrentBlock(currentBlock);//find next available block
 			}
 		}
-		else if(block_number == 12 && inode_table[inodeNumber].indirect_pointer != 0){
+		else if(block_number > 12 && inode_table[inodeNumber].indirect_pointer != 0){ //means we are in the indirect pointer adn it already exists
 			//maybe place below else within this if statement so that this conditional determins that indirect pointer already exists
 			//then checks on what block number it would be on. if within indirect pointer block there is a value, then can read from that and write to thath block
 			//if it is 0 value then need to allot new block and write tot that (the conditional below)
+			read_blocks(inode_table[inodeNumber].indirect_pointer, 1, &indirectBlock); //read the contents fo the block
 
-
-		}
-		//if indirect pointer and used more than once
-		else{
-			//if no space
-			if(currentBlock >= MAX_BLOCKS){
-				printf("No more space available to complete write of file\n");
-				break;
+			//if there is block already allotted 
+			if(indirectBlock[block_number - 12] != 0){
+				currentIndirectPointer = indirectBlock[block_number - 12]; //this will be the block that will be worked with
 			}
-			read_blocks(inode_table[inodeNumber].direct_pointer, 1, &indirectBlock[0]);//read the block
-			//find next empty pointer in the block
-			for(i=0; i < B; i++){
-				if(indirectBlock[i] == 0){
-					indirectBlock[i] = currentBlock; //set the next pointer
-					currentIndirectPointer = currentBlock; //set it to easier access variable
-					findCurrentBlock(currentBlock); //find next available block
+			else{
+				//if no space
+				if(currentBlock >= MAX_BLOCKS){
+					printf("No more space available to complete write of file\n");
 					break;
 				}
+				read_blocks(inode_table[inodeNumber].indirect_pointer, 1, &indirectBlock);//read the block
+				
+				//find next empty pointer in the block
+				for(i=0; i < sizeof(indirectBlock) / sizeof(indirectBlock[0]); i++){
+					if(indirectBlock[i] == 0){
+						indirectBlock[i] = currentBlock; //set the next pointer
+						currentIndirectPointer = currentBlock; //set it to easier access variable
+						write_blocks(inode_table[inodeNumber].indirect_pointer, 1, &indirectBlock); //then update the indirect pointer
+						free_blocks[currentBlock] = 1; //update free blocks
+						findCurrentBlock(currentBlock); //find next available block
+						break;
+					}
+				}
 			}
-
 		}
 
 		//then begin write
 		//if on indirect pointer
 		if(block_number > 11){
+			currentIndirectPointer += 1;//tp make compiler happy for test
+			
 
 		}
 
@@ -407,8 +414,8 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 			}
 
 			//adjust size if needed
-			if(fd_table[inodeNumber].rw_pointer > fd_table[inodeNumber].size){
-				fd_table[inodeNumber].size = fd_table[inodeNumber].rw_pointer;
+			if(fd_table[inodeNumber].rw_pointer > inode_table[inodeNumber].size){
+				inode_table[inodeNumber].size = fd_table[inodeNumber].rw_pointer;
 			}
 
 			//and then loop back up again
