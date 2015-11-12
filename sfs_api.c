@@ -374,10 +374,10 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 					break;
 				}
 				//if no more pointers available
-				else if(block_number > 12 + (BLOCK_SIZE / sizeof(unsigned int)){
+				else if(block_number > 12 + (BLOCK_SIZE / sizeof(unsigned int))){
 					printf("No more poointers avaialble to the file. You have reached max file size\n");
 				}
-				
+
 				read_blocks(inode_table[inodeNumber].indirect_pointer, 1, &indirectBlock);//read the block
 
 				printf("Assigning new indirect pointer at %d\n", currentBlock);
