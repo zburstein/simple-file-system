@@ -56,13 +56,14 @@ int freeBlocksLength;
 //what if try and remove a file that is open. how to get fdtable entry
 //do we need to write 0s into the data blocks?
 //do i want currentBlock
-
 //remove, write, and read are all set up for single blocks. will need to change these once I understand the pointers
 //also what about the false flag
 //a little confused about get next file name too. 
 //what to return for a failed open
 //do i have to malloc block content array for
 //if write too big shoudl we write to certain point that there is no logner any space or check first and not allow any write
+
+//at a certain point I start getting out bounds errors and im not sure what from
 
 void mksfs(int fresh) {
 	//Implement mksfs here
@@ -216,18 +217,24 @@ int sfs_fclose(int fileID){
 
 	return 1;
 }
-/*
 
+/*
 int sfs_fread(int fileID, char *buf, int length){
 	//find reference within the file descriptor table and get the inode
 	int inodeNumber, block_number, loc_in_block, bytesRead = 0;
-	char blockContent[BLOCK_SIZE];
-	inodeNumber = fd_table[fileID].inode_number;	
+	char blockContent[BLOCK_SIZE];	
+	unsigned int *indirectBlock;
+
+	//make buffers
+	blockContent = (char*) malloc(BLOCK_SIZE); 
+	indirectBlock = (unsigned int*) malloc(BLOCK_SIZE);
+
+	inodeNumber = fd_table[fileID].inode_number;
 	
 	//if bad handle
 	if(inodeNumber == 0){
 		printf("File descriptor does not exist\n");
-		return 0; //return error
+		return 0; //return no bytes read
 	}
 	
 	//if file is empty
@@ -236,17 +243,17 @@ int sfs_fread(int fileID, char *buf, int length){
 		return 0;
 	}
 
-	//if too long just cut it down to proper size
+	//if length too long just cut it down to proper size
 	if(fd_table[fileID].rw_pointer + length > inode_table[inodeNumber].size)
 		length = inode_table[inodeNumber].size - fd_table[fileID].rw_pointer;
 
-	//read the data. need loop in the event taht read spans multiple blocks
+	//read the data. need loop in the event that read spans multiple blocks
 	while(bytesRead < length){
 		//get the block that the r/w pointer is on and where within the block it is
 		block_number = inode_table[inodeNumber].rw_pointer / BLOCK_SIZE; 
 		loc_in_block = inode_table[inodeNumber].rw_pointer % BLOCK_SIZE;
 
-		//if need to use indirect pointer
+		//if on an indirect pointer
 		if(block_number > 11){
 			//do some thing
 		}
@@ -274,10 +281,14 @@ int sfs_fread(int fileID, char *buf, int length){
 
 	}
 
+
+	free(blockContent);//free the buffer created
+	free(indirectBlock);
+
 	return bytesRead; //return the number of characters copied
 }
-*/
 
+*/
 
 
 int sfs_fwrite(int fileID, const char *buf, int length){
@@ -287,7 +298,7 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 	unsigned int *indirectBlock;
 
 	blockContent = (char*) malloc(BLOCK_SIZE); //make new buffer
-	indirectBlock = (unsigned int*) malloc(BLOCK_SIZE / sizeof(unsigned int)); /////////////////need to fix this
+	indirectBlock = (unsigned int*) malloc(BLOCK_SIZE);
 
 	//get inode number
 	inodeNumber = fd_table[fileID].inode_number;
@@ -319,9 +330,9 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 		block_number = fd_table[fileID].rw_pointer / BLOCK_SIZE; 
 		loc_in_block = fd_table[fileID].rw_pointer % BLOCK_SIZE;
 
-		printf("current block is %d and the block number is %d and its ptr is %d. The rw pointer is %d\n", currentBlock, block_number, inode_table[inodeNumber].data_ptrs[block_number], fd_table[fileID].rw_pointer);
+		//printf("current block is %d and the block number is %d and its ptr is %d. The rw pointer is %d\n", currentBlock, block_number, inode_table[inodeNumber].data_ptrs[block_number], fd_table[fileID].rw_pointer);
 
-		//if need a new block
+		////////////if need a new block//////////////////////
 		//still have available data ptrs
 		if(block_number < 12 && inode_table[inodeNumber].data_ptrs[block_number] == 0){
 			//if no space
@@ -340,7 +351,7 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 		else if(block_number == 12 && inode_table[inodeNumber].indirect_pointer == 0){
 			//need to give it a block
 			//if no space
-			printf("allotting indirect pointer to %d", currentBlock);
+			//printf("allotting indirect pointer to %d", currentBlock);
 			if(currentBlock >= MAX_BLOCKS){
 				printf("No more space available to complete write of file\n");
 				break;
@@ -349,7 +360,7 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 				inode_table[inodeNumber].indirect_pointer = currentBlock; //set the indirect pointer
 				free_blocks[currentBlock] = 1; //update free blocks
 				findCurrentBlock(currentBlock); //find enxt available block
-				printf("will then assign pointer %d\n", currentBlock);
+				//printf("will then assign pointer %d\n", currentBlock);
 				indirectBlock[0] = currentBlock; //then set it in array we will use to write to block
 				currentIndirectPointer = currentBlock; //also keep it in easier access fo use in write
 				write_blocks(inode_table[inodeNumber].indirect_pointer, 1, &indirectBlock); //write into the indeirect pointer the new block
@@ -357,10 +368,8 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 				findCurrentBlock(currentBlock);//find next available block
 			}
 		}
-		else if(block_number > 12 && inode_table[inodeNumber].indirect_pointer != 0){ //means we are in the indirect pointer adn it already exists
-			//maybe place below else within this if statement so that this conditional determins that indirect pointer already exists
-			//then checks on what block number it would be on. if within indirect pointer block there is a value, then can read from that and write to thath block
-			//if it is 0 value then need to allot new block and write tot that (the conditional below)
+		//if need direct pointer from indirect pointer block
+		else if(block_number > 12 && inode_table[inodeNumber].indirect_pointer != 0){ 
 			read_blocks(inode_table[inodeNumber].indirect_pointer, 1, &indirectBlock); //read the contents fo the block
 
 			//if there is block already allotted 
@@ -375,18 +384,15 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 				}
 				//if no more pointers available
 				else if(block_number > 12 + (BLOCK_SIZE / sizeof(unsigned int))){
-					printf("No more poointers avaialble to the file. You have reached max file size\n");
+					printf("No more pointers avaialble to the file. You have reached max file size\n");
+					break;
 				}
 
 				read_blocks(inode_table[inodeNumber].indirect_pointer, 1, &indirectBlock);//read the block
 
-				printf("Assigning new indirect pointer at %d\n", currentBlock);
-				
 				//find next empty pointer in the block
 				for(i=0; i < BLOCK_SIZE / sizeof(unsigned int); i++){
-					printf("we are looping. loop until %u. value at location is %u. The length of indirectBlock is %u bytes and each one is %u\n", sizeof(indirectBlock) / sizeof(indirectBlock[0]), indirectBlock[i], sizeof(indirectBlock), sizeof(indirectBlock[0]));
 					if(indirectBlock[i] == 0){
-						printf("%d indirect pointers have already been assigned. Now assigning %d\n", i, i+1);
 						indirectBlock[i] = currentBlock; //set the next pointer
 						currentIndirectPointer = currentBlock; //set it to easier access variable
 						write_blocks(inode_table[inodeNumber].indirect_pointer, 1, &indirectBlock); //then update the indirect pointer
@@ -398,7 +404,7 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 			}
 		}
 
-
+		/////////////now the write///////////////////
 
 		//then begin write by reading block
 		//if on indirect pointer
@@ -444,9 +450,13 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 			//and then loop back up again
 	}
 
+	printf("file size is %u", inode_table[inodeNumber].size);
+
 	write_blocks(1, num_inode_blocks, &inode_table); //update inode table on block
 	write_blocks(MAX_BLOCKS - freeBlocksLength, freeBlocksLength, &free_blocks); //then update free blocks
-	free(blockContent);//free the buffer created
+	
+	//free the buffers created
+	free(blockContent);
 	free(indirectBlock);
 
 	return bytesWritten;
