@@ -384,14 +384,14 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 				//printf("will then assign pointer %d\n", currentBlock);
 				indirectBlock[0] = currentBlock; //then set it in array we will use to write to block
 				currentIndirectPointer = currentBlock; //also keep it in easier access fo use in write
-				write_blocks(inode_table[inodeNumber].indirect_pointer, 1, &indirectBlock); //write into the indeirect pointer the new block
+				write_blocks(inode_table[inodeNumber].indirect_pointer, 1, indirectBlock); //write into the indeirect pointer the new block
 				free_blocks[currentBlock] = 1;//set in free blocks array
 				findCurrentBlock(currentBlock);//find next available block
 			}
 		}
 		//if need direct pointer from indirect pointer block
 		else if(block_number > 12 && inode_table[inodeNumber].indirect_pointer != 0){ 
-			read_blocks(inode_table[inodeNumber].indirect_pointer, 1, &indirectBlock); //read the contents fo the block
+			read_blocks(inode_table[inodeNumber].indirect_pointer, 1, indirectBlock); //read the contents fo the block
 
 			//if there is block already allotted 
 			if(indirectBlock[block_number - 12] != 0){
@@ -409,14 +409,14 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 					break;
 				}
 
-				read_blocks(inode_table[inodeNumber].indirect_pointer, 1, &indirectBlock);//read the block
+				read_blocks(inode_table[inodeNumber].indirect_pointer, 1, indirectBlock);//read the block
 
 				//find next empty pointer in the block
 				for(i=0; i < BLOCK_SIZE / sizeof(unsigned int); i++){
 					if(indirectBlock[i] == 0){
 						indirectBlock[i] = currentBlock; //set the next pointer
 						currentIndirectPointer = currentBlock; //set it to easier access variable
-						write_blocks(inode_table[inodeNumber].indirect_pointer, 1, &indirectBlock); //then update the indirect pointer
+						write_blocks(inode_table[inodeNumber].indirect_pointer, 1, indirectBlock); //then update the indirect pointer
 						free_blocks[currentBlock] = 1; //update free blocks
 						findCurrentBlock(currentBlock); //find next available block
 						break;
@@ -430,13 +430,13 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 		//then begin write by reading block
 		//if on indirect pointer
 		if(block_number > 11){
-			read_blocks(currentIndirectPointer, 1, &blockContent[0]); //read the block
+			read_blocks(currentIndirectPointer, 1, blockContent); //read the block
 			workingBlock = currentIndirectPointer;
 		}
 		//if direct pointer
 		else{
 			//read the block into buffer
-			read_blocks(inode_table[inodeNumber].data_ptrs[block_number], 1, &blockContent[0]);
+			read_blocks(inode_table[inodeNumber].data_ptrs[block_number], 1, blockContent);
 			workingBlock = inode_table[inodeNumber].data_ptrs[block_number];
 		}
 
@@ -447,7 +447,7 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 			//printf("The loc in block is %d", loc_in_block);
 			memcpy(&blockContent[loc_in_block], &buf[bytesWritten], length);
 			//write_blocks(inode_table[inodeNumber].data_ptrs[block_number], 1, &blockContent[0]); //write it
-			write_blocks(workingBlock, 1, &blockContent[0]); //write it
+			write_blocks(workingBlock, 1, blockContent); //write it
 			bytesWritten += length; //update number of byteswritten
 			fd_table[fileID].rw_pointer += length;//update the pointer location
 			length -= length; //update the length
@@ -459,7 +459,7 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 			printf("Takes more than one block and writing to %d\n", workingBlock);
 			memcpy(&blockContent[loc_in_block], &buf[bytesWritten], BLOCK_SIZE - loc_in_block);//copy until the end of the block
 			//write_blocks(inode_table[inodeNumber].data_ptrs[block_number], 1, &blockContent[0]);//write the block
-			write_blocks(workingBlock, 1, &blockContent[0]);//write the block
+			write_blocks(workingBlock, 1, blockContent);//write the block
 			bytesWritten += BLOCK_SIZE - loc_in_block; //update bytes written
 			fd_table[fileID].rw_pointer += BLOCK_SIZE - loc_in_block; //update the rw pointer
 			length -= BLOCK_SIZE -loc_in_block; //update length
