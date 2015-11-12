@@ -113,7 +113,6 @@ int sfs_getnextfilename(char *fname) {
 
 int sfs_getfilesize(const char* path) {
 	//Implement sfs_getfilesize here	
-	
 	int index = findInDir(path);
 	int inodeNumber = root_dir[index].inode;
 	if(index >= 0)
@@ -127,7 +126,7 @@ int sfs_getfilesize(const char* path) {
 
 int sfs_fopen(char *name) {
 	//Implement sfs_fopen here	
-	int fd, index;
+	int fd, index, i;
 	
 	//find its index in the directory
 	index = findInDir(name);
@@ -149,7 +148,9 @@ int sfs_fopen(char *name) {
 		inode_table[availableInode].uid = 0;
 		inode_table[availableInode].gid = 0;
 		inode_table[availableInode].size = 0;
-		inode_table[availableInode].data_ptrs[0] = 0; //do not allot a spot yet
+		for(i = 0; i < 12; i++){
+			inode_table[availableInode].data_ptrs[i] = 0; //do not allot a spot yet
+		}
 
 		write_blocks(1, num_inode_blocks, &inode_table); //write the updated inode table to disk
 
@@ -281,7 +282,7 @@ int sfs_fread(int fileID, char *buf, int length){
 
 int sfs_fwrite(int fileID, const char *buf, int length){
 	//Implement sfs_fwrite here	
-	int inodeNumber, block_number, loc_in_block, bytesWritten = 0, i, currentIndirectPointer;
+	int inodeNumber, block_number, loc_in_block, bytesWritten = 0, i, currentIndirectPointer, workingBlock;
 	char *blockContent;	
 	unsigned int *indirectBlock;
 
@@ -305,18 +306,20 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 			return 0;
 		}
 
+		printf("Has no block yet. Giving it %d\n", currentBlock);
+
 		//give it a block and adjust block values accordingly
 		inode_table[inodeNumber].data_ptrs[0] = currentBlock;
 		free_blocks[currentBlock] = 1;
 		findCurrentBlock(currentBlock);
 	}
 
-	while(bytesWritten < length){
+	while(length > 0){
 		//get the block that the r/w pointer is on and where within the block it is
 		block_number = fd_table[fileID].rw_pointer / BLOCK_SIZE; 
 		loc_in_block = fd_table[fileID].rw_pointer % BLOCK_SIZE;
 
-		/////////////////////what if writing and arrive at indirect pointer. how to get this//////////////////////
+		printf("current block is %d and the block number is %d and its ptr is %d. The rw pointer is %d\n", currentBlock, block_number, inode_table[inodeNumber].data_ptrs[block_number], fd_table[fileID].rw_pointer);
 
 		//if need a new block
 		//still have available data ptrs
@@ -327,6 +330,7 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 				break;
 			}
 			else{
+				printf("Giving new block \n");
 				inode_table[inodeNumber].data_ptrs[block_number] = currentBlock; //assign it block
 				free_blocks[currentBlock] = 1; //update free blocks bit map
 				findCurrentBlock(currentBlock); //get new current block
@@ -336,6 +340,7 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 		else if(block_number == 12 && inode_table[inodeNumber].indirect_pointer == 0){
 			//need to give it a block
 			//if no space
+			printf("allotting indirect pointer to %d", currentBlock);
 			if(currentBlock >= MAX_BLOCKS){
 				printf("No more space available to complete write of file\n");
 				break;
@@ -344,9 +349,11 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 				inode_table[inodeNumber].indirect_pointer = currentBlock; //set the indirect pointer
 				free_blocks[currentBlock] = 1; //update free blocks
 				findCurrentBlock(currentBlock); //find enxt available block
+				printf("will then assign pointer %d\n", currentBlock);
 				indirectBlock[0] = currentBlock; //then set it in array we will use to write to block
 				currentIndirectPointer = currentBlock; //also keep it in easier access fo use in write
 				write_blocks(inode_table[inodeNumber].indirect_pointer, 1, &indirectBlock); //write into the indeirect pointer the new block
+				free_blocks[currentBlock] = 1;//set in free blocks array
 				findCurrentBlock(currentBlock);//find next available block
 			}
 		}
@@ -361,16 +368,25 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 				currentIndirectPointer = indirectBlock[block_number - 12]; //this will be the block that will be worked with
 			}
 			else{
-				//if no space
+				//if no spaceon disk
 				if(currentBlock >= MAX_BLOCKS){
 					printf("No more space available to complete write of file\n");
 					break;
 				}
+				//if no more pointers available
+				else if(block_number > 12 + (BLOCK_SIZE / sizeof(unsigned int)){
+					printf("No more poointers avaialble to the file. You have reached max file size\n");
+				}
+				
 				read_blocks(inode_table[inodeNumber].indirect_pointer, 1, &indirectBlock);//read the block
+
+				printf("Assigning new indirect pointer at %d\n", currentBlock);
 				
 				//find next empty pointer in the block
-				for(i=0; i < sizeof(indirectBlock) / sizeof(indirectBlock[0]); i++){
+				for(i=0; i < BLOCK_SIZE / sizeof(unsigned int); i++){
+					printf("we are looping. loop until %u. value at location is %u. The length of indirectBlock is %u bytes and each one is %u\n", sizeof(indirectBlock) / sizeof(indirectBlock[0]), indirectBlock[i], sizeof(indirectBlock), sizeof(indirectBlock[0]));
 					if(indirectBlock[i] == 0){
+						printf("%d indirect pointers have already been assigned. Now assigning %d\n", i, i+1);
 						indirectBlock[i] = currentBlock; //set the next pointer
 						currentIndirectPointer = currentBlock; //set it to easier access variable
 						write_blocks(inode_table[inodeNumber].indirect_pointer, 1, &indirectBlock); //then update the indirect pointer
@@ -382,44 +398,50 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 			}
 		}
 
-		//then begin write
+
+
+		//then begin write by reading block
 		//if on indirect pointer
 		if(block_number > 11){
-			currentIndirectPointer += 1;//tp make compiler happy for test
-			
-
+			read_blocks(currentIndirectPointer, 1, &blockContent[0]); //read the block
+			workingBlock = currentIndirectPointer;
 		}
-
 		//if direct pointer
 		else{
 			//read the block into buffer
 			read_blocks(inode_table[inodeNumber].data_ptrs[block_number], 1, &blockContent[0]);
-
-			//if write will finish within this block
-			if(length + loc_in_block < BLOCK_SIZE){
-				memcpy(&blockContent[loc_in_block], &buf[bytesWritten], length);
-				write_blocks(inode_table[inodeNumber].data_ptrs[block_number], 1, &blockContent[0]); //write it
-				bytesWritten += length; //update number of byteswritten
-				length -= length; //update the length
-				fd_table[inodeNumber].rw_pointer += length;//update the pointer location
-			}
-
-			//will spand more than one block
-			else{
-				memcpy(&blockContent[loc_in_block], &buf[bytesWritten], BLOCK_SIZE - length);//copy until the end of the block
-				write_blocks(inode_table[inodeNumber].data_ptrs[block_number], 1, &blockContent[0]);//write the block
-				bytesWritten += BLOCK_SIZE - loc_in_block; //update bytes written
-				length -= BLOCK_SIZE -loc_in_block; //update length
-				fd_table[inodeNumber].rw_pointer += BLOCK_SIZE - loc_in_block; //update the rw pointer
-			}
-
-			//adjust size if needed
-			if(fd_table[inodeNumber].rw_pointer > inode_table[inodeNumber].size){
-				inode_table[inodeNumber].size = fd_table[inodeNumber].rw_pointer;
-			}
-
-			//and then loop back up again
+			workingBlock = inode_table[inodeNumber].data_ptrs[block_number];
 		}
+
+
+		//if write will finish within this block
+		if(length + loc_in_block < BLOCK_SIZE){
+			printf("Will finish within block and writing to %d\n", workingBlock);
+			//printf("The loc in block is %d", loc_in_block);
+			memcpy(&blockContent[loc_in_block], &buf[bytesWritten], length);
+			//write_blocks(inode_table[inodeNumber].data_ptrs[block_number], 1, &blockContent[0]); //write it
+			write_blocks(workingBlock, 1, &blockContent[0]); //write it
+			bytesWritten += length; //update number of byteswritten
+			length -= length; //update the length
+			fd_table[fileID].rw_pointer += length;//update the pointer location
+		}
+
+		//if will spand more than one block
+		else{
+			printf("Takes more than one block and writing to %d\n", workingBlock);
+			memcpy(&blockContent[loc_in_block], &buf[bytesWritten], BLOCK_SIZE - loc_in_block);//copy until the end of the block
+			//write_blocks(inode_table[inodeNumber].data_ptrs[block_number], 1, &blockContent[0]);//write the block
+			write_blocks(workingBlock, 1, &blockContent[0]);//write the block
+			bytesWritten += BLOCK_SIZE - loc_in_block; //update bytes written
+			length -= BLOCK_SIZE -loc_in_block; //update length
+			fd_table[fileID].rw_pointer += BLOCK_SIZE - loc_in_block; //update the rw pointer
+		}
+
+		//adjust size if needed
+		if(fd_table[fileID].rw_pointer > inode_table[inodeNumber].size){
+			inode_table[inodeNumber].size = fd_table[fileID].rw_pointer;
+		}
+			//and then loop back up again
 	}
 
 	write_blocks(1, num_inode_blocks, &inode_table); //update inode table on block
