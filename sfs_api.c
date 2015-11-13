@@ -67,6 +67,8 @@ int freeBlocksLength;
 //at a certain point I start getting out bounds errors and im not sure what from
 //unsigned int vs int. what should we be using
 //still need to know the return values for some things
+//our responsibility for putting some sort of terminaiton or marker for the bufffer. becasue on certain values i get issues like 200. over prints
+//deal with &s
 
 void mksfs(int fresh) {
 	//Implement mksfs here
@@ -130,10 +132,13 @@ int sfs_getfilesize(const char* path) {
 
 int sfs_fopen(char *name) {
 	//Implement sfs_fopen here	
-	int fd, index, i;
+	int fd, index, i, goodExt;
+	char *ext;
 	
 	//find its index in the directory
 	index = findInDir(name);
+
+	printf("index is %d\n", index);
 
 	//if it does not exist then we need to create it by creating an inode and placig it in hte inode table as well as placing it in the directory
 	if(index == -1){ //does not exist so need to create the file
@@ -158,8 +163,17 @@ int sfs_fopen(char *name) {
 
 		write_blocks(1, num_inode_blocks, &inode_table); //write the updated inode table to disk
 
+		//deals with extension or not
+		ext = strchr(name, '.');
+		if((ext != NULL && strlen(ext) <= 4) || ext == NULL){
+			goodExt = 1;
+		}
+		else{
+			goodExt = 0;
+		}
+
 		//create new directory entry
-		if(strlen(name) > 20 || strlen(strchr(name, '.')) > 4){ 
+		if(strlen(name) > 20 || !goodExt){ 
 			printf("File name is invalid. Must not be longer than 20 char total and extension cannot be longer than 3 char\n");
 			return -1;
 		}
@@ -180,8 +194,6 @@ int sfs_fopen(char *name) {
 		printf("File already open\n");
 		return -1;
 	}
-
-
 
 	//need to give file an entry in the file descriptor table
 	//if no space in fd table
@@ -224,7 +236,7 @@ int sfs_fclose(int fileID){
 
 int sfs_fread(int fileID, char *buf, int length){
 	//find reference within the file descriptor table and get the inode
-	int bytesRead = 0, i;
+	int bytesRead = 0;
 	char *blockContent;	
 	unsigned int *indirectBlock, workingBlock, block_number, inodeNumber, loc_in_block;
 
@@ -247,22 +259,20 @@ int sfs_fread(int fileID, char *buf, int length){
 	}
 
 	//if length too long just cut it down to proper size
-	if(fd_table[fileID].rw_pointer + length > inode_table[inodeNumber].size)
+	if(fd_table[fileID].rw_pointer + length > inode_table[inodeNumber].size){
 		length = inode_table[inodeNumber].size - fd_table[fileID].rw_pointer;
+	}
 
 	//read the data. need loop in the event that read spans multiple blocks
 	while(length > 0){
 		//get the block that the r/w pointer is on and where within the block it is
-		block_number = fd_table[inodeNumber].rw_pointer / BLOCK_SIZE; 
-		loc_in_block = fd_table[inodeNumber].rw_pointer % BLOCK_SIZE;
+		block_number = fd_table[fileID].rw_pointer / BLOCK_SIZE; 
+		loc_in_block = fd_table[fileID].rw_pointer % BLOCK_SIZE;
 
 		//if on an indirect pointer
 		if(block_number > 11){
 			//read the indirectpointer block
 			read_blocks(inode_table[inodeNumber].indirect_pointer, 1, indirectBlock);
-			for (i = 0; i < 2; i++){
-				printf("the value in indirect is %u\n", indirectBlock[i]);
-			}
 			workingBlock = indirectBlock[block_number - 12];
 		}
 		//if using a direct pointer
@@ -279,7 +289,7 @@ int sfs_fread(int fileID, char *buf, int length){
 		if(length + loc_in_block < BLOCK_SIZE){
 			memcpy(&buf[bytesRead], &blockContent[loc_in_block], length); //will not go outside of the boundary of blockContent
 			bytesRead += length; //update the number of bytes read
-			fd_table[inodeNumber].rw_pointer += length; //update pointer
+			fd_table[fileID].rw_pointer += length; //update pointer
 			length -= length; //update remaining length
 
 		}
@@ -288,7 +298,7 @@ int sfs_fread(int fileID, char *buf, int length){
 		else{
 			memcpy(&buf[bytesRead], &blockContent[loc_in_block], BLOCK_SIZE - loc_in_block);//copy until the end of the block
 			bytesRead += BLOCK_SIZE - loc_in_block; //update number of bytes read
-			fd_table[inodeNumber].rw_pointer += BLOCK_SIZE -loc_in_block; //update the read write pointer
+			fd_table[fileID].rw_pointer += BLOCK_SIZE -loc_in_block; //update the read write pointer
 			length -= BLOCK_SIZE - loc_in_block; //update the remaining length
 		}
 	}
@@ -301,8 +311,6 @@ int sfs_fread(int fileID, char *buf, int length){
 
 	return bytesRead; //return the number of characters copied
 }
-
-
 
 int sfs_fwrite(int fileID, const char *buf, int length){
 	//Implement sfs_fwrite here	
@@ -444,9 +452,7 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 		//if write will finish within this block
 		if(length + loc_in_block < BLOCK_SIZE){
 			printf("Will finish within block and writing to %d\n", workingBlock);
-			//printf("The loc in block is %d", loc_in_block);
 			memcpy(&blockContent[loc_in_block], &buf[bytesWritten], length);
-			//write_blocks(inode_table[inodeNumber].data_ptrs[block_number], 1, &blockContent[0]); //write it
 			write_blocks(workingBlock, 1, blockContent); //write it
 			bytesWritten += length; //update number of byteswritten
 			fd_table[fileID].rw_pointer += length;//update the pointer location
@@ -509,27 +515,58 @@ int sfs_fseek(int fileID, int loc){
 	return 0;
 }
 
-/*
 int sfs_remove(char *file) {
 	//Implement sfs_remove here	
-	int dirIndex, inodeNumber;
+	unsigned int dirIndex, inodeNumber, *zeroBlock, fd, i, *indirectBlock;
+
+	zeroBlock = (unsigned int*) calloc(1, BLOCK_SIZE); //to zero blocks
+	indirectBlock = (unsigned int*) malloc(BLOCK_SIZE); //to fix free array
 
 	//find the file in directory
-	dirIndex = findInDir();
+	dirIndex = findInDir(file);
 	if(dirIndex == -1){
 		printf("File does not exist\n");
 		return EXIT_FAILURE;
 	}
 
-	inodeNumber = root_dir[dirIndex].inode;//get inode number
+	//get inode number
+	inodeNumber = root_dir[dirIndex].inode;
 
-	//remove the data blocks
-	free_blocks[inode_table[inodeNumber].data_ptrs[0]] = 0;
-	
-	//reset current block if it is not the earliest available
-	if(currentBlock > inode_table[inodeNumber].data_ptrs[0]){
-		currentBlock = inode_table[inodeNumber].data_ptrs[0];
+	//check if open. if it is remove it
+	fd = findInFd(inodeNumber);
+	if(fd != -1){
+		fd_table[fd].rw_pointer = 0;
+		fd_table[fd].inode_number = 0;
+		if(fd < availableFd){
+			availableFd = fd; //and reset availablefd if the one deleted has lower value
+		}	
 	}
+
+	//remove the direct data blocks
+	for(i = 0; i < 12; i++){
+		write_blocks(inode_table[inodeNumber].data_ptrs[i], 1, zeroBlock);//zero the block
+		free_blocks[inode_table[inodeNumber].data_ptrs[i]] = 0; //mark it as unused
+		inode_table[inodeNumber].data_ptrs[i] = 0; //and unset the data ptr
+	}
+
+	//then remove the blocks pointed to by indirect pointer block
+	read_blocks(inode_table[inodeNumber].indirect_pointer, 1, indirectBlock); //read the set of pointers
+	for(i = 0; i < BLOCK_SIZE / sizeof(unsigned int); i++){
+		if(indirectBlock[i] != 0){
+			write_blocks(indirectBlock[i], 1, zeroBlock); //zero it
+			free_blocks[indirectBlock[i]] = 0; //update free bitmap
+		}
+		else{
+			break;
+		}
+	}
+
+	//then take care of the block holding those pointers
+	write_blocks(inode_table[inodeNumber].indirect_pointer, 1, zeroBlock);//zero it
+	free_blocks[inode_table[inodeNumber].indirect_pointer] = 0; //mark it as unused
+	inode_table[inodeNumber].indirect_pointer = 0; //make it zero
+
+	findCurrentBlock(dirStartBlock + inode_table[0].size);//need to find the current block again. go from zero beacuse a bunch have been removed
 
 	//remove the inode 
 	inode_table[inodeNumber].mode = 0;
@@ -537,26 +574,34 @@ int sfs_remove(char *file) {
 	inode_table[inodeNumber].uid = 0;
 	inode_table[inodeNumber].gid = 0;
 	inode_table[inodeNumber].size = 0;
-	inode_table[inodeNumber].data_ptrs[0] = 0;
 
-	//reset availableInode
-	if(availableInode > inodeNumber){
+	//reset availableInode if inode has lower value
+	if(inodeNumber < availableInode){
 		availableInode = inodeNumber;
 	}
 
 	//remove the directory entry
-	root_dir[dirIndex].file_name = "\0";
+	//root_dir[dirIndex].file_name = "\0";
+	bzero(root_dir[dirIndex].file_name, 20);
 	root_dir[dirIndex].inode = 0;
 
 	//reset direntry if needed
-	if(availableDirectory > dirIndex){
+	if(dirIndex <availableDirectory){
 		availableDirectory = dirIndex;
 	}
 	
+	//write to disk things we updated
+	write_blocks(1, num_inode_blocks, inode_table);//write the inode table
+	write_blocks(dirStartBlock, inode_table[0].size, root_dir);//write the directory
+	write_blocks(MAX_BLOCKS - freeBlocksLength, freeBlocksLength, free_blocks);//write the free array
+
+	//free the buffer we created
+	free(zeroBlock);
+	free(indirectBlock);
+
 	return 0;
 }
 
-*/
 
 void init_sb(){
 	sb.magic = 1234;
