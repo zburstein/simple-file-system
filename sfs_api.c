@@ -39,36 +39,23 @@ int freeBlocksLength;
 
 //rot directory inode: mode? size? ptrs?
 //does root directory have an entry for itself within itself?
-//instead of using current block should i just use the freeblocks array? 
-//what if we run out of inode or directory sapce in block?
-//in conjunction with previous question what if we alot and then it happens to be bigger than that
-//are those that i declare to keep track of entries in fd table bad practice? 
 //he created close as having int return but not that in the assignment. So which is it? What should failure and success codes be
-//do we have to malloc a space for the buffer. I dont understand when we are supposed to be doing this
-//also whats the deal with caching
-//need to figure out data ptrs and what to do when there is more tan one block of memory being used. might just be aloop. but dont really know how data ptrs work so cant implement it
-//Check the usages of the available stuff to ensure that I have the properc checks before using them
-//What does he mean flush it to disk when writing
-//do we ahve to assign EOF
-//everythign i have is set up for each file only having a single block. ill have to make changes once i figure out what is going on with that. Especially with write. alot going on there. Will ahve to do a bunch of checks probably 
-//are we seting an upper limit on our file size. if not then how to properly deal with the data ptrs.
-//how many blocks is the directory
 //what am i returning for seek
-//what if try and remove a file that is open. how to get fdtable entry
-//do we need to write 0s into the data blocks?
-//do i want currentBlock
-//remove, write, and read are all set up for single blocks. will need to change these once I understand the pointers
-//also what about the false flag
 //a little confused about get next file name too. 
 //what to return for a failed open
-//do i have to malloc block content array for
-//if write too big shoudl we write to certain point that there is no logner any space or check first and not allow any write
 
 //at a certain point I start getting out bounds errors and im not sure what from
 //unsigned int vs int. what should we be using
 //still need to know the return values for some things
 //our responsibility for putting some sort of terminaiton or marker for the bufffer. becasue on certain values i get issues like 200. over prints
 //deal with &s
+
+//todo
+//bring in existing disk
+//reutrn values
+//getnextfilename
+//test that super block, directory, and inode table have written properly
+
 
 void mksfs(int fresh) {
 	//Implement mksfs here
