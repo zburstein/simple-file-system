@@ -21,12 +21,14 @@ void findOpenInode(int number);
 void findOpenDir(int number);
 void findOpenFd(int number);
 void findCurrentBlock(int number);
+void updateDiskInodeTable();
+void updateDiskDir();
+void updateDiskFreeBlocks();
 
 super_block_t sb; //the super block
 dir_entry_t root_dir[MAX_FILES]; //array of directory entris will be the directory structure
 inode_t inode_table[MAX_INODES]; //the inode table will be array of inodes
 fd_table_entry_t fd_table[MAX_FILES]; //the file descriptor table
-//unsigned short free_blocks[MAX_BLOCKS]; //free blocks jsut an int array with each index mapped to corresponding block
 unsigned int free_blocks[MAX_BLOCKS]; //free blocks jsut an int array with each index mapped to corresponding block
 int currentBlock; //to know what block to write the data to
 int availableInode; //will represent the lowest value inode space available
@@ -55,10 +57,13 @@ int freeBlocksLength;
 //reutrn values
 //getnextfilename
 //test that super block, directory, and inode table have written properly
+//migth need to make some cahnges on the writes where I am writing things that dont copy perfect size in. might have to use another buffer
 
 
 void mksfs(int fresh) {
 	//Implement mksfs here
+	void *blockContent, *inodeContent, *rootDirContent, *freeBlocksContent;
+	int num_dir_blocks;
 
 	if(fresh == 1){
 		init_fresh_disk(DISK_FILE, BLOCK_SIZE, MAX_BLOCKS);//initializes the disk of given name and of the size
@@ -93,6 +98,44 @@ void mksfs(int fresh) {
 		//read the root directory, superblock, and inode table into memory(the global variables)
 		//will also need to properly initialize the global variables i use
 		//read_blocks(1, )
+		init_disk(DISK_FILE, BLOCK_SIZE, MAX_BLOCKS);
+
+		num_inode_blocks = (sizeof(inode_t) * MAX_INODES) / BLOCK_SIZE + 1; //need how many blocks inode table is
+		num_dir_blocks = (sizeof(dir_entry_t) * MAX_FILES) / BLOCK_SIZE + 1; //need to know how many blocks directory is
+		freeBlocksLength = sizeof(free_blocks) / BLOCK_SIZE + 1;
+
+
+		blockContent = (void*) malloc(BLOCK_SIZE); //create buffer to work with
+		inodeContent = (void*) malloc(BLOCK_SIZE * num_inode_blocks);
+		rootDirContent = (void*) malloc(BLOCK_SIZE * num_dir_blocks); 
+		freeBlocksContent = (void*) malloc(BLOCK_SIZE * freeBlocksLength);
+
+		//read super block and place in sb
+		read_blocks(0, 1, blockContent); //read it 
+		memcpy(&sb, blockContent, sizeof(sb));//but need to copy proper size
+
+		//read inode table
+		read_blocks(1, num_inode_blocks, inodeContent); //read it
+		memcpy(inode_table, inodeContent, sizeof(inode_table)); //copy it in
+
+		//read directory
+		dirStartBlock = num_inode_blocks + 1; 
+		read_blocks(dirStartBlock, num_dir_blocks, rootDirContent);
+		memcpy(root_dir, rootDirContent, sizeof(root_dir));
+
+		//readfree_blocks array
+		read_blocks(MAX_BLOCKS - freeBlocksLength, freeBlocksLength, freeBlocksContent);
+		memcpy(free_blocks, freeBlocksContent, sizeof(free_blocks));
+
+		//now get other helper variables
+		findCurrentBlock(dirStartBlock + num_dir_blocks - 1);
+		findOpenInode(1);
+		findOpenDir(0);
+
+		free(blockContent);
+		free(inodeContent);
+		free(rootDirContent);
+		free(freeBlocksContent);
 	}
 	return;
 }
@@ -120,7 +163,14 @@ int sfs_getfilesize(const char* path) {
 int sfs_fopen(char *name) {
 	//Implement sfs_fopen here	
 	int fd, index, i, goodExt;
-	char *ext;
+	char *ext; 
+	void *inodeContent, *rootDirContent;
+
+
+	//make buffers to write the data sttructures becasue our structs might not be the right size and will therefore overwrite causing undefined behavior
+	inodeContent = (void*) calloc(1, BLOCK_SIZE * num_inode_blocks);
+	rootDirContent = (void*) calloc(1, BLOCK_SIZE * inode_table[0].size); 
+	
 	
 	//find its index in the directory
 	index = findInDir(name);
@@ -148,7 +198,10 @@ int sfs_fopen(char *name) {
 			inode_table[availableInode].data_ptrs[i] = 0; //do not allot a spot yet
 		}
 
-		write_blocks(1, num_inode_blocks, &inode_table); //write the updated inode table to disk
+		memcpy(inodeContent, inode_table, sizeof(inode_table)); //copy into buffer to update inode table
+		write_blocks(1, num_inode_blocks, inodeContent); //write the updated inode table to disk
+
+		//write_blocks(1, num_inode_blocks, &inode_table); //write the updated inode table to disk///////////////////////////
 
 		//deals with extension or not
 		ext = strchr(name, '.');
@@ -166,7 +219,12 @@ int sfs_fopen(char *name) {
 		}
 		strcpy(root_dir[availableDirectory].file_name, name); //copy the file name
 		root_dir[availableDirectory].inode = availableInode;	//and the inodeNumber
-		write_blocks(dirStartBlock, inode_table[0].size, &root_dir); //write the updated directory structure to disk
+		
+		memcpy(rootDirContent, root_dir, sizeof(root_dir)); //copy into proper sized buffer
+		write_blocks(dirStartBlock, inode_table[0].size, rootDirContent); //then write and update on disk
+		
+		//write_blocks(dirStartBlock, inode_table[0].size, &root_dir); //write the updated directory structure to disk
+		
 		index = availableDirectory; //set the index in directory
 		
 		//change the values of availableInode and availableDIr accordingly for next entry
@@ -197,6 +255,11 @@ int sfs_fopen(char *name) {
 
 	fd = availableFd; //set the file descriptor index
 	findOpenFd(availableFd);//update availe fd index
+
+
+	//free buffers we created
+	free(inodeContent);
+	free(rootDirContent);
 
 	return fd;//return file descriptor for the file opened
 }
@@ -311,6 +374,13 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 	int bytesWritten = 0;
 	char *blockContent;	
 	unsigned int *indirectBlock, currentIndirectPointer, inodeNumber, block_number, workingBlock, loc_in_block, i;
+
+	void *inodeContent, *freeBlocksContent;
+
+
+	//make buffers to write the data sttructures becasue our structs might not be the right size and will therefore overwrite causing undefined behavior
+	inodeContent = (void*) calloc(1, BLOCK_SIZE * num_inode_blocks);
+	freeBlocksContent = (void*) malloc(BLOCK_SIZE * freeBlocksLength);
 
 
 	blockContent = (char*) malloc(BLOCK_SIZE); //make new buffer
@@ -469,12 +539,24 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 
 	printf("file size is %u\n", inode_table[inodeNumber].size);
 
+	//update inode table on disk
+	memcpy(inodeContent, inode_table, sizeof(inode_table));
+	write_blocks(1, num_inode_blocks, inodeContent);
+
+	//then update the free bit map
+	memcpy(freeBlocksContent, free_blocks, sizeof(free_blocks));
+	write_blocks(MAX_BLOCKS - freeBlocksLength, freeBlocksLength, free_blocks);
+
+	/*
 	write_blocks(1, num_inode_blocks, &inode_table); //update inode table on block
 	write_blocks(MAX_BLOCKS - freeBlocksLength, freeBlocksLength, &free_blocks); //then update free blocks
-	
+	*/
+
 	//free the buffers created
 	free(blockContent);
 	free(indirectBlock);
+	free(inodeContent);
+	free(freeBlocksContent);
 
 	return bytesWritten;
 }
@@ -553,7 +635,7 @@ int sfs_remove(char *file) {
 	free_blocks[inode_table[inodeNumber].indirect_pointer] = 0; //mark it as unused
 	inode_table[inodeNumber].indirect_pointer = 0; //make it zero
 
-	findCurrentBlock(dirStartBlock + inode_table[0].size);//need to find the current block again. go from zero beacuse a bunch have been removed
+	findCurrentBlock(dirStartBlock + inode_table[0].size - 1);//need to find the current block again. 
 
 	//remove the inode 
 	inode_table[inodeNumber].mode = 0;
