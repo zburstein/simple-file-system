@@ -30,15 +30,13 @@ typedef struct inode{
 } inode_t;
 
 typedef struct dir_entry{
-	char file_name[20]; //the name
+	char file_name[21]; //the name
 	unsigned int inode; //the pointer to location in inode table
 } dir_entry_t;
 
 typedef struct fd_table_entry{
 	unsigned int inode_number; //pointer or number
 	unsigned int rw_pointer;
-	//unsigned int write_pointer;
-	//unsigned int locpointer;
 } fd_table_entry_t;
 
 //do i need one for directory, inode table, and 

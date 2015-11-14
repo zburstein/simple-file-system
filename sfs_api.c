@@ -55,6 +55,7 @@ int freeBlocksLength;
 //test that super block, directory, and inode table have written properly
 //migth need to make some cahnges on the writes where I am writing things that dont copy perfect size in. might have to use another buffer
 //remove appears to not be working properly in terms of directory(maybe inode as well) because it looks like it only creates 2 when 2 have been removed
+//zero everything on fresh disk too
 
 //questions
 //in test 1 there is a possible logical error at linee 339. tries to write and fill up disk using 1 file but we are only using one indirect pointer meaning 
@@ -133,6 +134,9 @@ void mksfs(int fresh) {
 		findCurrentBlock(dirStartBlock + num_dir_blocks - 1);
 		findOpenInode(1);
 		findOpenDir(0);
+		
+		availableFd = 0; 
+		bzero(fd_table, sizeof(fd_table));
 
 		free(blockContent);
 		free(inodeContent);
@@ -234,7 +238,7 @@ int sfs_fopen(char *name) {
 			printf("File name is invalid. Must not be longer than 20 char total and extension cannot be longer than 3 char\n");
 			return -1;
 		}
-		root_dir[availableDirectory].file_name[20] = '\0'; //add mull terminator
+		root_dir[availableDirectory].file_name[strlen(name)] = '\0'; //add mull terminator
 		strcpy(root_dir[availableDirectory].file_name, name); //copy the file name
 		root_dir[availableDirectory].inode = availableInode;	//and the inodeNumber
 		
@@ -776,13 +780,10 @@ int findInDir(const char *path){
 	int i, isPresent = 0;
 	//loop through until find it
 	for(i = 0; i < MAX_INODES; i++){
-		printf("At location %d the name is %s and am looking for %s\n", i, root_dir[i].file_name, path);
 		if(strcmp(root_dir[i].file_name, path) == 0){
 			isPresent = 1;
 			break;
 		}
-		else if(strcmp(root_dir[i].file_name, "") == 0)//root_dir[i].file_name[0] == '\0')
-			break;
 	}
 
 	if(isPresent)
@@ -798,9 +799,6 @@ int findInFd(unsigned int inodeNumber){
 	for(i = 0; i < MAX_FILES; i++){
 		if(fd_table[i].inode_number == inodeNumber){
 			return i;
-		}
-		else if(fd_table[i].inode_number == 0){
-			return -1;
 		}
 	}
 	return -1;
