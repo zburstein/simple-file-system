@@ -8,8 +8,9 @@
 #define MAX_BLOCKS 500
 
 #define DISK_FILE "sfs_disk.disk"
-#define MAX_INODES 50 //not sure what this should be
-#define MAX_FILES 50 //not sure wha thtis should be
+#define MAX_INODES 50 
+#define MAX_FILES 50
+#define MAX_FILE_SIZE (BLOCK_SIZE * 12) + (BLOCK_SIZE * (BLOCK_SIZE / sizeof(unsigned int))) //number of pointer available  
 
 void zeroDisk();
 void init_sb();
@@ -40,14 +41,9 @@ int num_inode_blocks;
 int dirStartBlock;
 int freeBlocksLength;
 
-//rot directory inode: mode? size? ptrs?
 //does root directory have an entry for itself within itself?
-//he created close as having int return but not that in the assignment. So which is it? What should failure and success codes be
 //what am i returning for seek
-//a little confused about get next file name too. 
-//what to return for a failed open
 
-//at a certain point I start getting out bounds errors and im not sure what from
 //unsigned int vs int. what should we be using
 //still need to know the return values for some things
 //our responsibility for putting some sort of terminaiton or marker for the bufffer. becasue on certain values i get issues like 200. over prints
@@ -56,9 +52,13 @@ int freeBlocksLength;
 //todo
 //bring in existing disk
 //reutrn values
-//getnextfilename
 //test that super block, directory, and inode table have written properly
 //migth need to make some cahnges on the writes where I am writing things that dont copy perfect size in. might have to use another buffer
+//remove appears to not be working properly in terms of directory(maybe inode as well) because it looks like it only creates 2 when 2 have been removed
+
+//questions
+//in test 1 there is a possible logical error at linee 339. tries to write and fill up disk using 1 file but we are only using one indirect pointer meaning 
+//that at a certain point in time we might hit a ceiling on max file size first. so that does not make sense
 
 
 
@@ -311,7 +311,7 @@ int sfs_fread(int fileID, char *buf, int length){
 	unsigned int *indirectBlock, workingBlock, block_number, inodeNumber, loc_in_block;
 
 	//make buffers
-	blockContent = (char*) malloc(BLOCK_SIZE); 
+	blockContent = (char*) calloc(1, BLOCK_SIZE); 
 	indirectBlock = (unsigned int*) calloc(1, BLOCK_SIZE);
 
 	inodeNumber = fd_table[fileID].inode_number;
@@ -321,10 +321,23 @@ int sfs_fread(int fileID, char *buf, int length){
 		printf("File descriptor does not exist\n");
 		return 0; //return no bytes read
 	}
+
+/*
+	//if file is too large
+	if(length + fd_table[fileID].rw_pointer > MAX_FILE_SIZE){
+		printf("The file size is too large. Will cut off and only read %d\n", MAX_FILE_SIZE);
+		length = MAX_FILE_SIZE - fd_table[fileID].rw_pointer;
+	}
+*/
 	
 	//if file is empty
 	if(inode_table[inodeNumber].size == 0){
 		strcpy(buf, "");
+		return 0;
+	}
+
+	if(length <= 0){
+		printf("Cannot read 0 or less\n");
 		return 0;
 	}
 
@@ -338,6 +351,8 @@ int sfs_fread(int fileID, char *buf, int length){
 		//get the block that the r/w pointer is on and where within the block it is
 		block_number = fd_table[fileID].rw_pointer / BLOCK_SIZE; 
 		loc_in_block = fd_table[fileID].rw_pointer % BLOCK_SIZE;
+
+		//printf("block number is %d\n", block_number);
 
 		//if on an indirect pointer
 		if(block_number > 11){
@@ -403,7 +418,7 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 */
 
 
-	blockContent = (char*) malloc(BLOCK_SIZE); //make new buffer
+	blockContent = (char*) calloc(1, BLOCK_SIZE); //make new buffer
 	indirectBlock = (unsigned int*) calloc(1, BLOCK_SIZE);
 
 	//get inode number
@@ -412,6 +427,17 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 	//if bad handle
 	if(inodeNumber == 0){
 		printf("File descriptor does not exist\n");
+		return 0;
+	}
+
+	//if file is too large
+	if(length + fd_table[fileID].rw_pointer > MAX_FILE_SIZE){
+		printf("The file size is too large. Will cut off and only write %lu\n", MAX_FILE_SIZE);
+		length = MAX_FILE_SIZE - fd_table[fileID].rw_pointer;
+	}
+
+	if(length <= 0){
+		printf("Cannot write 0 or less\n");
 		return 0;
 	}
 
@@ -618,13 +644,13 @@ int sfs_remove(char *file) {
 	unsigned int dirIndex, inodeNumber, *zeroBlock, fd, i, *indirectBlock;
 
 	zeroBlock = (unsigned int*) calloc(1, BLOCK_SIZE); //to zero blocks
-	indirectBlock = (unsigned int*) malloc(BLOCK_SIZE); //to fix free array
+	indirectBlock = (unsigned int*) calloc(1, BLOCK_SIZE); //to fix free array
 
 	//find the file in directory
 	dirIndex = findInDir(file);
 	if(dirIndex == -1){
 		printf("File does not exist\n");
-		return EXIT_FAILURE;
+		return 1;
 	}
 
 	//get inode number
@@ -750,7 +776,7 @@ int findInDir(const char *path){
 	int i, isPresent = 0;
 	//loop through until find it
 	for(i = 0; i < MAX_INODES; i++){
-		//printf("At location %d the name is %s\n", i, root_dir[i].file_name);
+		printf("At location %d the name is %s and am looking for %s\n", i, root_dir[i].file_name, path);
 		if(strcmp(root_dir[i].file_name, path) == 0){
 			isPresent = 1;
 			break;
