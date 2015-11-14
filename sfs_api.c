@@ -191,12 +191,12 @@ int sfs_fopen(char *name) {
 	//find its index in the directory
 	index = findInDir(name);
 
-	printf("index is %d\n", index);
+	//printf("index is %d\n", index);
 
 	//if it does not exist then we need to create it by creating an inode and placig it in hte inode table as well as placing it in the directory
 	if(index == -1){ //does not exist so need to create the file
 
-		printf("inode: %d     block:%d    dir:%d      fd: %d\n", availableInode, currentBlock, availableDirectory, availableFd);
+		//printf("inode: %d     block:%d    dir:%d      fd: %d\n", availableInode, currentBlock, availableDirectory, availableFd);
 	
 		//first check if space in inode table
 		if(availableInode >= MAX_INODES || currentBlock >= MAX_BLOCKS || availableDirectory >= MAX_INODES || availableFd >= MAX_FILES){
@@ -234,6 +234,7 @@ int sfs_fopen(char *name) {
 			printf("File name is invalid. Must not be longer than 20 char total and extension cannot be longer than 3 char\n");
 			return -1;
 		}
+		root_dir[availableDirectory].file_name[20] = '\0'; //add mull terminator
 		strcpy(root_dir[availableDirectory].file_name, name); //copy the file name
 		root_dir[availableDirectory].inode = availableInode;	//and the inodeNumber
 		
@@ -311,7 +312,7 @@ int sfs_fread(int fileID, char *buf, int length){
 
 	//make buffers
 	blockContent = (char*) malloc(BLOCK_SIZE); 
-	indirectBlock = (unsigned int*) malloc(BLOCK_SIZE);
+	indirectBlock = (unsigned int*) calloc(1, BLOCK_SIZE);
 
 	inodeNumber = fd_table[fileID].inode_number;
 	
@@ -403,7 +404,7 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 
 
 	blockContent = (char*) malloc(BLOCK_SIZE); //make new buffer
-	indirectBlock = (unsigned int*) malloc(BLOCK_SIZE);
+	indirectBlock = (unsigned int*) calloc(1, BLOCK_SIZE);
 
 	//get inode number
 	inodeNumber = fd_table[fileID].inode_number;
@@ -749,11 +750,12 @@ int findInDir(const char *path){
 	int i, isPresent = 0;
 	//loop through until find it
 	for(i = 0; i < MAX_INODES; i++){
+		//printf("At location %d the name is %s\n", i, root_dir[i].file_name);
 		if(strcmp(root_dir[i].file_name, path) == 0){
 			isPresent = 1;
 			break;
 		}
-		else if(root_dir[i].file_name == 0)
+		else if(strcmp(root_dir[i].file_name, "") == 0)//root_dir[i].file_name[0] == '\0')
 			break;
 	}
 
