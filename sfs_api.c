@@ -61,6 +61,7 @@ int freeBlocksLength;
 //migth need to make some cahnges on the writes where I am writing things that dont copy perfect size in. might have to use another buffer
 
 
+
 void mksfs(int fresh) {
 	//Implement mksfs here
 	void *blockContent, *inodeContent, *rootDirContent, *freeBlocksContent;
@@ -99,10 +100,6 @@ void mksfs(int fresh) {
 		updateDiskFreeBlocks();
 	}
 	else {
-		////?????
-		//read the root directory, superblock, and inode table into memory(the global variables)
-		//will also need to properly initialize the global variables i use
-		//read_blocks(1, )
 		init_disk(DISK_FILE, BLOCK_SIZE, MAX_BLOCKS);
 
 		num_inode_blocks = (sizeof(inode_t) * MAX_INODES) / BLOCK_SIZE + 1; //need how many blocks inode table is
@@ -147,8 +144,22 @@ void mksfs(int fresh) {
 
 int sfs_getnextfilename(char *fname) {
 	//Implement sfs_getnextfilename here	
+	int dirIndex;
 
-	return 0;
+	//search the directory
+	dirIndex = findInDir(fname);
+	if(dirIndex == -1){
+		printf("File does not exist\n");
+		return 0;
+	}
+	
+	if(root_dir[dirIndex + 1].file_name[0] == '\0'){
+		return 0;
+	}
+	else{
+		strcpy(fname, root_dir[dirIndex+1].file_name);
+		return 1;
+	}
 }
 
 
@@ -240,7 +251,6 @@ int sfs_fopen(char *name) {
 	}	
 
 	//file already exists or has been created at this point
-
 	//if already open
 	if(findInFd(root_dir[index].inode) != -1){
 		printf("File already open\n");
@@ -278,7 +288,7 @@ int sfs_fclose(int fileID){
 	//first check if present in table
 	if(fd_table[fileID].inode_number == 0){
 		printf("There is no file with give handle\n");
-		return 0;
+		return -1;
 	}
 
 	//else remove the file from the fd table
@@ -289,7 +299,7 @@ int sfs_fclose(int fileID){
 	if(fileID < availableFd)
 		availableFd = fileID;
 
-	return 1;
+	return 0;
 }
 
 
@@ -871,5 +881,17 @@ void updateDiskFreeBlocks(){
 
 	//free the buffer
 	free(freeBlocksContent);
+}
+
+void printInode(){
+	int i = 0;
+	for(i = 0; i < MAX_INODES; i++){
+		if(inode_table[i].link_cnt == 0){
+			return;
+		}
+		else{
+			printf("Inode number %d has size %u and data pointer at block %u\n", i, inode_table[i].size, inode_table[i].data_ptrs[0]);
+		}
+	}
 }
 		
