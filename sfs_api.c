@@ -148,7 +148,8 @@ int sfs_getnextfilename(char *fname) {
 
 int sfs_getfilesize(const char* path) {
 	//Implement sfs_getfilesize here
-	unsigned int index, inodeNumber;	
+	unsigned int inodeNumber;	
+	int index;
 	index = findInDir(path);
 	inodeNumber = root_dir[index].inode;
 	if(index >= 0)
@@ -161,8 +162,9 @@ int sfs_getfilesize(const char* path) {
 }
 
 int sfs_fopen(char *name) {	
-	unsigned int fd, index, i, goodExt;
+	unsigned int fd, i, goodExt;
 	char *ext; 
+	int index;
 	
 	//find its index in the directory
 	index = findInDir(name);
@@ -545,7 +547,8 @@ int sfs_fseek(int fileID, int loc){
 
 int sfs_remove(char *file) {
 	//Implement sfs_remove here	
-	unsigned int dirIndex, inodeNumber, *zeroBlock, fd, i, *indirectBlock;
+	unsigned int inodeNumber, *zeroBlock, i, *indirectBlock;
+	int dirIndex, fd;
 
 	zeroBlock = (unsigned int*) calloc(1, BLOCK_SIZE); //to zero blocks
 	indirectBlock = (unsigned int*) calloc(1, BLOCK_SIZE); //to fix free array
