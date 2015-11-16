@@ -28,40 +28,20 @@ dir_entry_t root_dir[MAX_FILES]; //array of directory entris will be the directo
 inode_t inode_table[MAX_INODES]; //the inode table will be array of inodes
 fd_table_entry_t fd_table[MAX_FILES]; //the file descriptor table
 unsigned int free_blocks[MAX_BLOCKS]; //free blocks jsut an int array with each index mapped to corresponding block
-int currentBlock; //the earliest empty block
-int availableInode; //will represent the lowest value inode space available
-int availableDirectory; //lowest value of empty dir index
-int availableFd = 0; //lowest empty space in fd table
-int num_inode_blocks; //the length fo the inode table in terms of blocks
-int dirStartBlock;//the starting block of the directory
-int freeBlocksLength; //length of freeblocks in terms of blocks
-int nextFile = 0; //used in get next file name
-
-
-//unsigned int vs int. what should we be using
-//still need to know the return values for some things
-//our responsibility for putting some sort of terminaiton or marker for the bufffer. becasue on certain values i get issues like 200. over prints
-//deal with &s
-
-//todo
-//bring in existing disk
-//reutrn values
-//test that super block, directory, and inode table have written properly
-//migth need to make some cahnges on the writes where I am writing things that dont copy perfect size in. might have to use another buffer
-//remove appears to not be working properly in terms of directory(maybe inode as well) because it looks like it only creates 2 when 2 have been removed
-//zero everything on fresh disk too
-//also figure out where you should be callocing and where you shouldnt
-
-//questions
-//in test 1 there is a possible logical error at linee 339. tries to write and fill up disk using 1 file but we are only using one indirect pointer meaning 
-//that at a certain point in time we might hit a ceiling on max file size first. so that does not make sense
-
+unsigned int currentBlock; //the earliest empty block
+unsigned int availableInode; //will represent the lowest value inode space available
+unsigned int availableDirectory; //lowest value of empty dir index
+unsigned int availableFd = 0; //lowest empty space in fd table
+unsigned int num_inode_blocks; //the length fo the inode table in terms of blocks
+unsigned int dirStartBlock;//the starting block of the directory
+unsigned int freeBlocksLength; //length of freeblocks in terms of blocks
+unsigned int nextFile = 0; //used in get next file name
 
 
 void mksfs(int fresh) {
 	//Implement mksfs here
 	void *blockContent, *inodeContent, *rootDirContent, *freeBlocksContent;
-	int num_dir_blocks;
+	unsigned int num_dir_blocks;
 
 	if(fresh == 1){
 		init_fresh_disk(DISK_FILE, BLOCK_SIZE, MAX_BLOCKS);//initializes the disk of given name and of the size
@@ -167,9 +147,10 @@ int sfs_getnextfilename(char *fname) {
 
 
 int sfs_getfilesize(const char* path) {
-	//Implement sfs_getfilesize here	
-	int index = findInDir(path);
-	int inodeNumber = root_dir[index].inode;
+	//Implement sfs_getfilesize here
+	unsigned int index, inodeNumber;	
+	index = findInDir(path);
+	inodeNumber = root_dir[index].inode;
 	if(index >= 0)
 		return inode_table[inodeNumber].size;
 	else{
@@ -180,7 +161,7 @@ int sfs_getfilesize(const char* path) {
 }
 
 int sfs_fopen(char *name) {	
-	int fd, index, i, goodExt;
+	unsigned int fd, index, i, goodExt;
 	char *ext; 
 	
 	//find its index in the directory
@@ -266,6 +247,10 @@ int sfs_fopen(char *name) {
 
 int sfs_fclose(int fileID){	
 	
+	if(fileID < 0 || fileID >= MAX_INODES){
+		printf("Bad fileID\n");
+		return -1;
+	}
 	//first check if present in table
 	if(fd_table[fileID].inode_number == 0){
 		printf("There is no file with give handle\n");
@@ -286,9 +271,8 @@ int sfs_fclose(int fileID){
 
 int sfs_fread(int fileID, char *buf, int length){
 	//find reference within the file descriptor table and get the inode
-	int bytesRead = 0;
 	char *blockContent;	
-	unsigned int *indirectBlock, workingBlock, block_number, inodeNumber, loc_in_block;
+	unsigned int *indirectBlock, workingBlock, block_number, inodeNumber, loc_in_block, bytesRead = 0;
 
 	//make buffers
 	blockContent = (char*) calloc(1, BLOCK_SIZE); 
@@ -367,9 +351,8 @@ int sfs_fread(int fileID, char *buf, int length){
 }
 
 int sfs_fwrite(int fileID, const char *buf, int length){
-	int bytesWritten = 0;
 	char *blockContent;	
-	unsigned int *indirectBlock, currentIndirectPointer, inodeNumber, block_number, workingBlock, loc_in_block, i;
+	unsigned int *indirectBlock, currentIndirectPointer, inodeNumber, block_number, workingBlock, loc_in_block, i, bytesWritten = 0;
 
 	//make buffers
 	blockContent = (char*) calloc(1, BLOCK_SIZE); 
@@ -687,7 +670,7 @@ void init_free_blocks(){
 
 int findInDir(const char *path){
 
-	int i, isPresent = 0;
+	unsigned int i, isPresent = 0;
 	//loop through until find it
 	for(i = 0; i < MAX_INODES; i++){
 		if(strcmp(root_dir[i].file_name, path) == 0){
@@ -704,7 +687,7 @@ int findInDir(const char *path){
 
 
 int findInFd(unsigned int inodeNumber){
-	int i;
+	unsigned int i;
 	//search through fd table if find number
 	for(i = 0; i < MAX_FILES; i++){
 		if(fd_table[i].inode_number == inodeNumber){
@@ -716,7 +699,7 @@ int findInFd(unsigned int inodeNumber){
 
 	
 void findOpenInode(int number){
-	int i = number;
+	unsigned int i = number;
 	for(i = number; i < MAX_INODES; i++){//can start at the current location
 		//if it is first nul then set accordingly and return
 		if(inode_table[i].link_cnt == 0){ 
@@ -730,7 +713,7 @@ void findOpenInode(int number){
 }
 
 void findOpenDir(int number){
-	int i = number;
+	unsigned int i = number;
 	for(i = number; i < MAX_INODES; i++){
 		if(root_dir[i].file_name[0] == '\0'){
 			availableDirectory = i;
@@ -743,7 +726,7 @@ void findOpenDir(int number){
 }
 
 void findOpenFd(int number){
-	int i = number;
+	unsigned int i = number;
 	for(i = number; i < MAX_FILES; i++){
 		if(fd_table[i].inode_number == 0){
 			availableFd = i;
@@ -756,7 +739,7 @@ void findOpenFd(int number){
 }	
 
 void findCurrentBlock(int number){
-	int i;
+	unsigned int i;
 	for(i = number; i < MAX_BLOCKS; i++){
 		//search until find free block
 		if(free_blocks[i] == 0){
