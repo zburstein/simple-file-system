@@ -20,13 +20,13 @@ typedef struct super_block{
 } super_block_t;
 
 typedef struct inode{
-	unsigned int mode; //Mode that its opened in?????? file type
-	unsigned int link_cnt; //????Not sure what this is. how many hard links point to i node
+	unsigned int mode; 
+	unsigned int link_cnt; 
 	unsigned int uid; //user id
 	unsigned int gid; //group id
 	unsigned int size; //size fo the file
 	unsigned int data_ptrs[12]; //pointers to the disk blocks that store the files contents
-	unsigned int indirect_pointer;
+	unsigned int indirect_pointer; //poiinter to block that stores more pointers
 } inode_t;
 
 typedef struct dir_entry{
@@ -38,5 +38,3 @@ typedef struct fd_table_entry{
 	unsigned int inode_number; //pointer or number
 	unsigned int rw_pointer;
 } fd_table_entry_t;
-
-//do i need one for directory, inode table, and 
