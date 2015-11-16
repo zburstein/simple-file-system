@@ -40,6 +40,7 @@ int getNextFileLocation = 0;
 int num_inode_blocks;
 int dirStartBlock;
 int freeBlocksLength;
+int nextFile = 0;
 
 //does root directory have an entry for itself within itself?
 //what am i returning for seek
@@ -140,6 +141,8 @@ void mksfs(int fresh) {
 		availableFd = 0; 
 		bzero(fd_table, sizeof(fd_table));
 
+		nextFile = 0;
+
 		free(blockContent);
 		free(inodeContent);
 		free(rootDirContent);
@@ -149,23 +152,25 @@ void mksfs(int fresh) {
 }
 
 int sfs_getnextfilename(char *fname) {
-	//Implement sfs_getnextfilename here	
-	int dirIndex;
-
-	//search the directory
-	dirIndex = findInDir(fname);
-	if(dirIndex == -1){
-		printf("File does not exist\n");
-		return 0;
-	}
+	char *zero = (char*) calloc(1, sizeof(char) * 20); //empty buffer to if empty directory location
 	
-	if(root_dir[dirIndex + 1].file_name[0] == '\0'){
-		return 0;
+	//search until find next entry or out of space
+	while(nextFile < MAX_FILES && (strlen(root_dir[nextFile].file_name) == 0 || memcmp(zero, root_dir[nextFile].file_name, 20) == 0)){
+		nextFile++;//if empty directory location increment
 	}
-	else{
-		strcpy(fname, root_dir[dirIndex+1].file_name);
-		return 1;
-	}
+
+	//if too large though reset nextFile and return 0
+	if(nextFile >= MAX_FILES){
+		nextFile = 0; //reset it
+		free(zero);
+		return 0;//and return 0
+	}	
+	
+	//at this point can copy the dir entry into fname
+	strcpy(fname, root_dir[nextFile].file_name);
+	nextFile++;
+	free(zero);
+	return 1;
 }
 
 
