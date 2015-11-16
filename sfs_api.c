@@ -12,7 +12,7 @@
 #define MAX_FILES 50
 #define MAX_FILE_SIZE (BLOCK_SIZE * 12) + (BLOCK_SIZE * (BLOCK_SIZE / sizeof(unsigned int))) //number of pointer available  
 
-void zeroDisk();
+void zeroCache();
 void init_sb();
 void add_root_dir_inode();
 void init_free_blocks();
@@ -56,6 +56,7 @@ int freeBlocksLength;
 //migth need to make some cahnges on the writes where I am writing things that dont copy perfect size in. might have to use another buffer
 //remove appears to not be working properly in terms of directory(maybe inode as well) because it looks like it only creates 2 when 2 have been removed
 //zero everything on fresh disk too
+//also figure out where you should be callocing and where you shouldnt
 
 //questions
 //in test 1 there is a possible logical error at linee 339. tries to write and fill up disk using 1 file but we are only using one indirect pointer meaning 
@@ -70,7 +71,7 @@ void mksfs(int fresh) {
 
 	if(fresh == 1){
 		init_fresh_disk(DISK_FILE, BLOCK_SIZE, MAX_BLOCKS);//initializes the disk of given name and of the size
-		//zeroDisk(); //zero all contents 
+		zeroCache(); //zero all contents 
 
 		//allot space to dir and inode based upon how mnay coulf theoretically end up fitting. so will have to do sizeof / BLOCKSIZE
 		//create superblock and write it to disk
@@ -108,10 +109,10 @@ void mksfs(int fresh) {
 		freeBlocksLength = sizeof(free_blocks) / BLOCK_SIZE + 1;
 
 
-		blockContent = (void*) malloc(BLOCK_SIZE); //create buffer to work with
-		inodeContent = (void*) malloc(BLOCK_SIZE * num_inode_blocks);
-		rootDirContent = (void*) malloc(BLOCK_SIZE * num_dir_blocks); 
-		freeBlocksContent = (void*) malloc(BLOCK_SIZE * freeBlocksLength);
+		blockContent = (void*) calloc(1, BLOCK_SIZE); //create buffer to work with
+		inodeContent = (void*) calloc(1, BLOCK_SIZE * num_inode_blocks);
+		rootDirContent = (void*) calloc(1, BLOCK_SIZE * num_dir_blocks); 
+		freeBlocksContent = (void*) calloc(1, BLOCK_SIZE * freeBlocksLength);
 
 		//read super block and place in sb
 		read_blocks(0, 1, blockContent); //read it 
@@ -135,6 +136,7 @@ void mksfs(int fresh) {
 		findOpenInode(1);
 		findOpenDir(0);
 		
+		//need to zero file descriptor table
 		availableFd = 0; 
 		bzero(fd_table, sizeof(fd_table));
 
@@ -745,13 +747,12 @@ void init_sb(){
 	sb.root_dir_inode = 0; //why is this 0
 }
 
-void zeroDisk(){
-	//some of this seems off like the directory. Also why no zeroing of the data portion
+void zeroCache(){
 	bzero(&sb, sizeof(super_block_t)); //zero the super block
-	bzero(&inode_table[0], sizeof(inode_t) * MAX_INODES); //inode table
-	bzero(&root_dir, sizeof(dir_entry_t)); //root directory
-	bzero(&free_blocks[0], sizeof(unsigned short) * MAX_BLOCKS); //free blocks array
-	bzero(&fd_table[0], sizeof(fd_table_entry_t) * MAX_BLOCKS); //fd table
+	bzero(inode_table, sizeof(inode_table)); //inode table
+	bzero(root_dir, sizeof(root_dir)); //root directory
+	bzero(free_blocks, sizeof(free_blocks)); //free blocks array
+	bzero(fd_table, sizeof(fd_table)); //fd table
 }
 
 void add_root_dir_inode(){
