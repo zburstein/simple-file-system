@@ -576,7 +576,9 @@ int sfs_remove(char *file) {
 	//remove the direct data blocks
 	for(i = 0; i < 12; i++){
 		write_blocks(inode_table[inodeNumber].data_ptrs[i], 1, zeroBlock);//zero the block
-		free_blocks[inode_table[inodeNumber].data_ptrs[i]] = 0; //mark it as unused
+		if(inode_table[inodeNumber].data_ptrs[i] != 0){
+			free_blocks[inode_table[inodeNumber].data_ptrs[i]] = 0; //mark it as unused
+		}
 		inode_table[inodeNumber].data_ptrs[i] = 0; //and unset the data ptr
 	}
 
@@ -594,7 +596,9 @@ int sfs_remove(char *file) {
 
 	//then take care of the block holding those pointers
 	write_blocks(inode_table[inodeNumber].indirect_pointer, 1, zeroBlock);//zero it
-	free_blocks[inode_table[inodeNumber].indirect_pointer] = 0; //mark it as unused
+	if(inode_table[inodeNumber].indirect_pointer != 0){
+		free_blocks[inode_table[inodeNumber].indirect_pointer] = 0; //mark it as unused
+	}
 	inode_table[inodeNumber].indirect_pointer = 0; //make it zero
 
 	findCurrentBlock(dirStartBlock + inode_table[0].size - 1);//need to find the current block again. 

@@ -1,5 +1,4 @@
-
-#define MAXFILENAME 60 //does this need ot be changed?
+#define MAXFILENAME 20 //does this need ot be changed?
 
 void mksfs(int fresh);
 int sfs_getnextfilename(char *fname);
