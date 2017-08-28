@@ -4,9 +4,11 @@
 #include <stdio.h>
 #include <string.h>
 
+//establishes the size of each block and how many are present
 #define BLOCK_SIZE 512
 #define MAX_BLOCKS 500
 
+//number of inodes and files allowed
 #define DISK_FILE "sfs_disk.disk"
 #define MAX_INODES 50 
 #define MAX_FILES 50
@@ -37,7 +39,7 @@ unsigned int dirStartBlock;//the starting block of the directory
 unsigned int freeBlocksLength; //length of freeblocks in terms of blocks
 unsigned int nextFile = 0; //used in get next file name
 
-
+//creates the filesystem
 void mksfs(int fresh) {
 	//Implement mksfs here
 	void *blockContent, *inodeContent, *rootDirContent, *freeBlocksContent;
@@ -123,6 +125,7 @@ void mksfs(int fresh) {
 	return;
 }
 
+//retrieves next file name in the directory
 int sfs_getnextfilename(char *fname) {
 	char *zero = (char*) calloc(1, sizeof(char) * 20); //empty buffer to check if empty directory location
 	
@@ -145,7 +148,7 @@ int sfs_getnextfilename(char *fname) {
 	return 1;
 }
 
-
+//gets the size of the given file
 int sfs_getfilesize(const char* path) {
 	//Implement sfs_getfilesize here
 	unsigned int inodeNumber;	
@@ -161,6 +164,7 @@ int sfs_getfilesize(const char* path) {
 	
 }
 
+//opens the given file
 int sfs_fopen(char *name) {	
 	unsigned int fd, i, goodExt;
 	char *ext; 
@@ -247,6 +251,7 @@ int sfs_fopen(char *name) {
 	return fd;//return file descriptor for the file opened
 }
 
+//closes the given file
 int sfs_fclose(int fileID){	
 	
 	if(fileID < 0 || fileID >= MAX_INODES){
@@ -270,7 +275,7 @@ int sfs_fclose(int fileID){
 	return 0;
 }
 
-
+//reads the given fiel into buffer
 int sfs_fread(int fileID, char *buf, int length){
 	//find reference within the file descriptor table and get the inode
 	char *blockContent;	
@@ -352,6 +357,7 @@ int sfs_fread(int fileID, char *buf, int length){
 	return bytesRead; //return the number of characters copied
 }
 
+//writes the given file into buf
 int sfs_fwrite(int fileID, const char *buf, int length){
 	char *blockContent;	
 	unsigned int *indirectBlock, currentIndirectPointer, inodeNumber, block_number, workingBlock, loc_in_block, i, bytesWritten = 0;
@@ -523,7 +529,7 @@ int sfs_fwrite(int fileID, const char *buf, int length){
 	return bytesWritten;
 }
 
-
+// seek to the location from beginning
 int sfs_fseek(int fileID, int loc){
 	unsigned int inodeNumber;
 
@@ -545,6 +551,7 @@ int sfs_fseek(int fileID, int loc){
 	return 0;
 }
 
+//removes given file from file system
 int sfs_remove(char *file) {
 	//Implement sfs_remove here	
 	unsigned int inodeNumber, *zeroBlock, i, *indirectBlock;
