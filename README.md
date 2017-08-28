@@ -1,0 +1,2 @@
+# Simple File System
+This project is a simple file system that uses the FUSE library (https://github.com/libfuse/libfuse) to emulate a disk. I wrote sfs_api.c and sfs_api.h, which provide the structures and api for disk operations. I also wrote the makefile. The rest of the files were provided as part of the assignment. A more in depth description of the project as well as more details regarding the api and the data structures created can be found within project_outline.pdf 
